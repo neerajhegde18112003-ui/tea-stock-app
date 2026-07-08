@@ -287,18 +287,16 @@ with tab2:
             st.rerun()
 
 # --- ADD VARIETY EXPANDER ---
-with st.expander("➕ Add Entire
 # --- ADD VARIETY EXPANDER ---
-with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False):
-    add_col1, add_col2, add_col3, add_col4 = st.columns([1.5, 1, 1, 1])
-    with add_col1: new_item_name = st.text_input("Tea Variety Name")
-    with add_col2: new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0, step=50)
-    with add_col3: new_item_p_price = st.number_input("Initial Cost (₹/KG)", min_value=0.0, value=0.0, step=10.0)
-    with add_col4: new_item_s_price = st.number_input("Target Sale Rate (₹/KG)", min_value=0.0, value=0.0, step=10.0)
-    if st.button("Add Variety ✨", use_container_width=True):
+with st.expander("Add New Variety"):
+    new_item_name = st.text_input("Variety Name")
+    new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0)
+    new_item_p_price = st.number_input("Cost (₹/KG)", min_value=0.0, value=0.0)
+    new_item_s_price = st.number_input("Sale Rate (₹/KG)", min_value=0.0, value=0.0)
+    if st.button("Add ✨", use_container_width=True):
         if new_item_name.strip() != "" and new_item_name not in current_inventory:
             batches = [{"qty": int(new_item_stock), "cost": float(new_item_p_price)}] if new_item_stock > 0 else []
-            current_inventory[new_item_name] = {"sale_price": new_item_s_price, "color": "#cbd5e1", "batches": batches}
+            current_inventory[new_item_name] = {"sale_price": new_item_s_price, "batches": batches}
             save_inventory(current_inventory)
             add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, 0.0, "Opening Inventory", "CASH", "Opening Inventory")
             st.session_state.inventory_data = current_inventory
