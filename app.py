@@ -377,17 +377,32 @@ st.write("---")
 st.header("📜 Recent Transactions History Log")
 if len(transactions_history) > 0:
     for i, tx in enumerate(transactions_history):
+       # --- RECENT LEDGER HISTORY LOG WITH PDF DOWNLOAD BUTTONS ---
+st.write("---")
+st.header("📜 Recent Transactions History Log")
+if len(transactions_history) > 0:
+    for i, tx in enumerate(transactions_history):
         with st.container():
             col_d1, col_d2, col_d3, col_d4, col_d5, col_btn = st.columns([1.5, 2, 1, 1.2, 1.5, 1.2])
-            with col_d1: st.write(f"🕒 `{tx['date']}`")
-            with col_d2: st.write(f"**{tx['item_name']}** ({tx['type']})")
-            with col_d3: st.write(f"{tx['quantity']:,} KG" if tx['quantity'] > 0 else "-")
-            with col_d4: st.write(f"₹ {tx['total_amount (₹)']:,}")
-            with col_d5: st.write(f"👤 {tx['party']} `[{tx['payment_status']}]`")
+            
+            # Safe fallbacks using .get() to prevent KeyError on old data
+            tx_date = tx.get("date", "N/A")
+            tx_item = tx.get("item_name", "N/A")
+            tx_type = tx.get("type", "N/A")
+            tx_qty = tx.get("quantity", 0)
+            tx_amt = tx.get("total_amount (₹)", 0.0)
+            tx_party = tx.get("party", "N/A")
+            tx_status = tx.get("payment_status", "N/A")
+            
+            with col_d1: st.write(f"🕒 `{tx_date}`")
+            with col_d2: st.write(f"**{tx_item}** ({tx_type})")
+            with col_d3: st.write(f"{tx_qty:,} KG" if tx_qty > 0 else "-")
+            with col_d4: st.write(f"₹ {tx_amt:,}")
+            with col_d5: st.write(f"👤 {tx_party} `[{tx_status}]`")
             with col_btn:
-                # Generate binary PDF data
+                # Generate binary PDF data safely
                 pdf_bytes = generate_invoice_pdf(tx)
-                clean_filename = f"Invoice_{tx['date'].replace(' ', '_').replace(':', '-')}.pdf"
+                clean_filename = f"Invoice_{tx_date.replace(' ', '_').replace(':', '-')}.pdf"
                 st.download_button(
                     label="📄 Download Bill",
                     data=pdf_bytes,
