@@ -378,6 +378,7 @@ st.header("📜 Recent Transactions History Log")
 if len(transactions_history) > 0:
     for i, tx in enumerate(transactions_history):
        # --- RECENT LEDGER HISTORY LOG WITH PDF DOWNLOAD BUTTONS ---
+# --- RECENT LEDGER HISTORY LOG WITH PDF DOWNLOAD BUTTONS ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
 if len(transactions_history) > 0:
