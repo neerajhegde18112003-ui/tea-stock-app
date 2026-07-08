@@ -6,6 +6,7 @@ import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
 import pandas as pd
+from fpdf import FPDF
 
 # --- MODERN THEME CONFIGURATION ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
@@ -101,6 +102,66 @@ def add_transaction(item_name, action_type, quantity, rate, margin_earned, cost_
     }
     transactions.insert(0, new_log)
     with open(LOG_FILE, "w") as f: json.dump(transactions, f, indent=4)
+
+# --- PDF GENERATOR UTILITY ---
+def generate_invoice_pdf(tx):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header Branding
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(22, 101, 52) # Forest green
+    pdf.cell(0, 12, "NAGBARI TRADERS", ln=True, align="C")
+    
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, "Wholesale Tea Merchants & Traders", ln=True, align="C")
+    pdf.ln(10)
+    
+    # Invoice Metadata Table
+    pdf.set_text_color(30, 41, 59)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, f"TRANSACTION RECEIPT", ln=True)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(4)
+    
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(50, 6, f"Date & Time:", 0)
+    pdf.cell(0, 6, f"{tx['date']}", 1, ln=True)
+    pdf.cell(50, 6, f"Party / Business Name:", 0)
+    pdf.cell(0, 6, f"{tx['party']}", 1, ln=True)
+    pdf.cell(50, 6, f"Transaction Type:", 0)
+    pdf.cell(0, 6, f"{tx['type']}", 1, ln=True)
+    pdf.cell(50, 6, f"Payment Mode Assigned:", 0)
+    pdf.cell(0, 6, f"{tx['payment_status']}", 1, ln=True)
+    pdf.ln(8)
+    
+    # Financial Particulars Table
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(80, 8, "Particulars / Item Description", 1, 0, "C")
+    pdf.cell(35, 8, "Quantity (KG)", 1, 0, "C")
+    pdf.cell(35, 8, "Rate (Rs/KG)", 1, 0, "C")
+    pdf.cell(40, 8, "Total Value (Rs)", 1, 1, "C")
+    
+    pdf.set_font("Helvetica", "", 10)
+    # Handle normal stock items vs raw entries
+    particulars = tx['item_name'] if tx['quantity'] > 0 else f"Account Entry: {tx['cost_used_details']}"
+    qty_str = f"{tx['quantity']:,} KG" if tx['quantity'] > 0 else "-"
+    rate_str = f"Rs {tx['rate (₹)']}" if tx['quantity'] > 0 else "-"
+    
+    pdf.cell(80, 10, particulars, 1, 0, "L")
+    pdf.cell(35, 10, qty_str, 1, 0, "C")
+    pdf.cell(35, 10, rate_str, 1, 0, "C")
+    pdf.cell(40, 10, f"Rs {tx['total_amount (₹)']:,}", 1, 1, "R")
+    pdf.ln(15)
+    
+    # Authorized Signatory Line
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.cell(0, 5, "Thank you for doing business with Nagbari Traders.", ln=True, align="L")
+    pdf.ln(10)
+    pdf.cell(0, 5, "Authorized Signature: _______________________", ln=True, align="R")
+    
+    return pdf.output()
 
 # --- LOGIN PROTECTION ---
 auth_data = load_auth()
@@ -284,7 +345,7 @@ with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False
             st.session_state.inventory_data = current_inventory
             st.rerun()
 
-# --- NO TABS BINDING: ITEM TILES MATRIX DISPLAY ---
+# --- ITEM TILES MATRIX DISPLAY ---
 st.write("---")
 st.header("📦 Current Stock & Batch Breakdown Matrix")
 grid_col1, grid_col2 = st.columns(2)
@@ -311,11 +372,26 @@ for item_name in list(current_inventory.keys()):
                 current_inventory[item_name]["sale_price"] = new_s
                 save_inventory(current_inventory); st.session_state.inventory_data = current_inventory; st.rerun()
 
-# --- NO TABS BINDING: RECENT LEDGER HISTORY LOG ---
+# --- RECENT LEDGER HISTORY LOG WITH PDF DOWNLOAD BUTTONS ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
 if len(transactions_history) > 0:
-    df_logs = pd.DataFrame(transactions_history)
-    df_logs = df_logs[["date", "item_name", "type", "quantity", "total_amount (₹)", "net_profit_realized (₹)", "payment_status", "party", "cost_used_details"]]
-    df_logs.columns = ["Timestamp", "Particulars/Goods", "Type of Action", "Qty (KG)", "Total Value (₹)", "Profit (₹)", "Cash/Bank Channel", "Party Details", "Remarks/Cost Breakdown"]
-    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+    for i, tx in enumerate(transactions_history):
+        with st.container():
+            col_d1, col_d2, col_d3, col_d4, col_d5, col_btn = st.columns([1.5, 2, 1, 1.2, 1.5, 1.2])
+            with col_d1: st.write(f"🕒 `{tx['date']}`")
+            with col_d2: st.write(f"**{tx['item_name']}** ({tx['type']})")
+            with col_d3: st.write(f"{tx['quantity']:,} KG" if tx['quantity'] > 0 else "-")
+            with col_d4: st.write(f"₹ {tx['total_amount (₹)']:,}")
+            with col_d5: st.write(f"👤 {tx['party']} `[{tx['payment_status']}]`")
+            with col_btn:
+                # Generate binary PDF data
+                pdf_bytes = generate_invoice_pdf(tx)
+                clean_filename = f"Invoice_{tx['date'].replace(' ', '_').replace(':', '-')}.pdf"
+                st.download_button(
+                    label="📄 Download Bill",
+                    data=pdf_bytes,
+                    file_name=clean_filename,
+                    mime="application/pdf",
+                    key=f"dl_btn_{i}"
+                )
