@@ -288,13 +288,34 @@ with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False
 st.write("---")
 st.header("📦 Current Stock & Batch Breakdown Matrix")
 grid_col1, grid_col2 = st.columns(2)
-item_
-# --- NO TABS BINDING: ITEM TILES MATRIX DISPLAY ---
-st.write("---")
-st.header("📦 Current Stock & Batch Breakdown Matrix")
-grid_col1, grid_col2 = st.columns(2)
-item_index = 0  # <--- Make sure this line says item_index = 0
+item_index = 0
 for item_name in list(current_inventory.keys()):
     data = current_inventory[item_name]
     current_grid_col = grid_col1 if item_index % 2 == 0 else grid_col2
-    item_index += 1  # <--- Make sure this line says item_index += 1
+    item_index += 1
+    batches_list = data.get("batches", [])
+    total_item_stock = sum(b["qty"] for b in batches_list)
+    with current_grid_col:
+        with st.container(border=True):
+            st.markdown(f"### {item_name}")
+            st.markdown("**📋 Live Unsold Batches:**")
+            if len(batches_list) == 0: st.write("*Out of Stock*")
+            else:
+                for idx, b in enumerate(batches_list): st.write(f"• **Batch #{idx+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
+            st.write("---")
+            m1, m2 = st.columns(2)
+            with m1: st.metric(label="Total Physical Stock", value=f"{total_item_stock:,} KG")
+            with m2: st.metric(label="Base Target Selling Price", value=f"₹{data['sale_price']}")
+            new_s = st.number_input("Update Target Selling Price (₹/KG)", min_value=0.0, value=float(data["sale_price"]), step=5.0, key=f"edit_s_{item_name}")
+            if new_s != data["sale_price"]:
+                current_inventory[item_name]["sale_price"] = new_s
+                save_inventory(current_inventory); st.session_state.inventory_data = current_inventory; st.rerun()
+
+# --- NO TABS BINDING: RECENT LEDGER HISTORY LOG ---
+st.write("---")
+st.header("📜 Recent Transactions History Log")
+if len(transactions_history) > 0:
+    df_logs = pd.DataFrame(transactions_history)
+    df_logs = df_logs[["date", "item_name", "type", "quantity", "total_amount (₹)", "net_profit_realized (₹)", "payment_status", "party", "cost_used_details"]]
+    df_logs.columns = ["Timestamp", "Particulars/Goods", "Type of Action", "Qty (KG)", "Total Value (₹)", "Profit (₹)", "Cash/Bank Channel", "Party Details", "Remarks/Cost Breakdown"]
+    st.dataframe(df_logs, use_container_width=True, hide_index=True)
