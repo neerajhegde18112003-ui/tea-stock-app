@@ -24,7 +24,6 @@ st.markdown("""
     h1 { font-size: 2.2rem !important; color: #166534; font-weight: 700; text-align: center; margin-bottom: 0px; }
     h2 { font-size: 1.4rem !important; color: #1e293b; font-weight: 600; margin-top: 1rem !important; margin-bottom: 0.5rem !important;}
     h3 { font-size: 1.3rem !important; font-weight: 700; margin: 0px !important; }
-    .field-label { font-size: 0.75rem; color: #64748b; font-weight: 600; margin-bottom: 2px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -33,7 +32,7 @@ DATA_FILE = "tea_stock_data.json"
 LOG_FILE = "transaction_log.json"
 AUTH_FILE = "auth_config.json"
 
-# --- OWNER CONFIGURATION (CHANGE THIS TO YOUR EMAIL) ---
+# --- OWNER CONFIGURATION ---
 OWNER_EMAIL = "neerajhegde547@gmail.com" 
 
 # --- SECURITY FUNCTIONS ---
@@ -65,30 +64,20 @@ def send_otp_email(to_email, otp_code):
 # --- LOAD DATA FUNCTIONS ---
 def load_inventory():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            # Migration check: make sure old data structure updates to include both prices smoothly
-            for item in data:
-                if "purchase_price" not in data[item]:
-                    data[item]["purchase_price"] = data[item].get("price", 200)
-                if "sale_price" not in data[item]:
-                    data[item]["sale_price"] = data[item].get("price", 250)
-            return data
+        with open(DATA_FILE, "r") as f: return json.load(f)
     return {
-        "Assam CTC Tea": {"stock": 1250, "purchase_price": 200, "sale_price": 240, "color": "#bef264"},
-        "Darjeeling": {"stock": 250, "purchase_price": 500, "sale_price": 650, "color": "#86efac"}
+        "Assam CTC Tea": {"stock": 1000, "purchase_price": 200.0, "sale_price": 250.0, "color": "#bef264"}
     }
 
 def save_inventory(updated_inventory):
-    with open(DATA_FILE, "w") as f:
-        json.dump(updated_inventory, f, indent=4)
+    with open(DATA_FILE, "w") as f: json.dump(updated_inventory, f, indent=4)
 
 def load_transactions():
     if os.path.exists(LOG_FILE):
         with open(LOG_FILE, "r") as f: return json.load(f)
     return []
 
-def add_transaction(item_name, action_type, quantity, rate, party_details):
+def add_transaction(item_name, action_type, quantity, rate, margin_earned, party_details):
     transactions = load_transactions()
     total_amount = int(quantity) * float(rate)
     new_log = {
@@ -98,6 +87,7 @@ def add_transaction(item_name, action_type, quantity, rate, party_details):
         "quantity": int(quantity),
         "rate (₹)": float(rate),
         "total_amount (₹)": total_amount,
+        "net_profit_realized (₹)": float(margin_earned),
         "party": party_details if party_details.strip() != "" else "N/A"
     }
     transactions.insert(0, new_log)
@@ -109,7 +99,6 @@ if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #166534; font-weight: 700; margin-top: 5rem;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #64748b; margin-bottom: 2rem;'>Wholesale Stock Portal Login</p>", unsafe_allow_html=True)
     _, col, _ = st.columns([1, 1.2, 1])
     with col:
         with st.container(border=True):
@@ -121,13 +110,13 @@ if not st.session_state.logged_in:
                 else: st.error("❌ Incorrect Password.")
     st.stop()
 
-# --- INITIALIZE MAIN DASHBOARD DATA ---
+# --- INITIALIZE DATA ---
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
 current_inventory = st.session_state.inventory_data
+transactions_history = load_transactions()
 
-# --- HEADER APP UI ---
-st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #64748b; font-size: 1rem; margin-bottom: 1.5rem;'>Wholesale Stock Management Dashboard</p>", unsafe_allow_html=True)
+# --- CALCULATE REALIZED NET PROFIT FROM HISTORY ---
+realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx["type"] == "SALE (Stock Out)")
 
 # --- SIDEBAR PANEL ---
 with st.sidebar:
@@ -146,79 +135,87 @@ with st.sidebar:
             if st.button("Verify & Save ✅", use_container_width=True):
                 if entered_otp == st.session_state.generated_otp and new_password_input.strip() != "":
                     save_auth(new_password_input.strip()); st.session_state.otp_sent = False; st.success("Changed successfully!")
-                else: st.error("❌ Invalid setup or OTP.")
     if st.button("Logout 🔒", use_container_width=True): st.session_state.logged_in = False; st.rerun()
 
-# --- OVERVIEW METRICS WITH ESTIMATED MARGIN ---
-st.header("📊 Overview")
+# --- HEADER APP UI ---
+st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748b; font-size: 1rem; margin-bottom: 1.5rem;'>Wholesale Stock Management Dashboard</p>", unsafe_allow_html=True)
+
+# --- OVERVIEW METRICS ---
+st.header("📊 Financial Overview")
 with st.container():
     col1, col2, col3, col4 = st.columns(4)
-    total_items = len(current_inventory)
     total_stock_kg = sum(item["stock"] for item in current_inventory.values())
-    total_cost_value = sum(item["stock"] * item["purchase_price"] for item in current_inventory.values())
-    total_sale_value = sum(item["stock"] * item["sale_price"] for item in current_inventory.values())
-    potential_profit = total_sale_value - total_cost_value
+    total_cost_valuation = sum(item["stock"] * item["purchase_price"] for item in current_inventory.values())
+    
+    with col1: st.metric(label="Total Stock Balance", value=f"{total_stock_kg:,} KG")
+    with col2: st.metric(label="Inventory Asset Value (WAC)", value=f"₹{round(total_cost_valuation, 2):,}")
+    with col3: st.metric(label="Total Realized Net Profit 💰", value=f"₹{round(realized_net_profit, 2):,}")
+    with col4: 
+        margin_pct = (realized_net_profit / total_cost_valuation * 100) if total_cost_valuation > 0 else 0
+        st.metric(label="Return Margin on Stock Assets", value=f"{round(margin_pct, 1)}%")
 
-    with col1: st.metric(label="Varieties", value=f"{total_items}")
-    with col2: st.metric(label="Total Stock", value=f"{total_stock_kg:,} KG")
-    with col3: st.metric(label="Stock Cost Value", value=f"₹{total_cost_value:,}")
-    with col4: st.metric(label="Expected Profit Margin", value=f"₹{potential_profit:,}")
-
-# --- LOG TRANSACTION SECTION (DYNAMIC RATES) ---
+# --- LOG TRANSACTION SECTION (WAC ENGINE) ---
 st.write("---")
 st.header("📝 Log New Transaction")
 with st.container():
     tx_col1, tx_col2, tx_col3, tx_col4 = st.columns([1.5, 1, 1, 1.5])
     with tx_col1: selected_item = st.selectbox("Select Tea Variety", list(current_inventory.keys()))
     with tx_col2: transaction_type = st.radio("Action Type", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
-    with tx_col3: tx_quantity = st.number_input("Quantity (KG)", min_value=1, value=50, step=50)
+    with tx_col3: tx_quantity = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
     
-    # Automatically switch default rate on display based on purchase vs sale selection
     default_rate = current_inventory[selected_item]["purchase_price"] if transaction_type == "PURCHASE (Stock In)" else current_inventory[selected_item]["sale_price"]
     
     with tx_col4: 
-        tx_rate = st.number_input("Transaction Rate (₹/KG)", min_value=0, value=int(default_rate), step=5, key=f"tx_rate_{selected_item}_{transaction_type}")
+        tx_rate = st.number_input("Transaction Rate (₹/KG)", min_value=0.0, value=float(default_rate), step=5.0, key=f"tx_rate_{selected_item}_{transaction_type}")
         party_info = st.text_input("Party / Supplier Name", placeholder="e.g., Balaji Traders")
         
     if st.button("Submit Transaction ⚡", use_container_width=True):
-        current_stock = current_inventory[selected_item]["stock"]
-        if transaction_type == "SALE (Stock Out)" and tx_quantity > current_stock:
-            st.error(f"❌ Not enough stock! You only have {current_stock} KG left.")
+        item_data = current_inventory[selected_item]
+        old_stock = item_data["stock"]
+        old_wac = item_data["purchase_price"]
+        margin_earned = 0.0
+        
+        if transaction_type == "SALE (Stock Out)" and tx_quantity > old_stock:
+            st.error(f"❌ Low Stock Alert! You only have {old_stock} KG left.")
         else:
-            if transaction_type == "PURCHASE (Stock In)": 
-                current_inventory[selected_item]["stock"] += tx_quantity
-            else: 
-                current_inventory[selected_item]["stock"] -= tx_quantity
+            if transaction_type == "PURCHASE (Stock In)":
+                # Weighted Average Cost formula execution
+                new_stock = old_stock + tx_quantity
+                if new_stock > 0:
+                    calculated_wac = ((old_stock * old_wac) + (tx_quantity * tx_rate)) / new_stock
+                    item_data["purchase_price"] = calculated_wac
+                item_data["stock"] = new_stock
+            else:
+                # Sale processing: Calculate profit based on current WAC baseline
+                item_data["stock"] = old_stock - tx_quantity
+                margin_earned = (tx_rate - old_wac) * tx_quantity
                 
             save_inventory(current_inventory)
-            add_transaction(selected_item, transaction_type, tx_quantity, tx_rate, party_info)
+            add_transaction(selected_item, transaction_type, tx_quantity, tx_rate, margin_earned, party_info)
             st.session_state.inventory_data = current_inventory
-            st.success("Processed transaction and updated stock perfectly!")
+            st.success("Ledger adjusted and transactions recorded flawlessly!")
             st.rerun()
 
-# --- ADD VARIETY WITH TWO PRICE FIELDS ---
+# --- ADD VARIETY ---
 with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False):
     add_col1, add_col2, add_col3, add_col4 = st.columns([1.5, 1, 1, 1])
     with add_col1: new_item_name = st.text_input("Tea Variety Name")
     with add_col2: new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0, step=50)
-    with add_col3: new_item_p_price = st.number_input("Purchase Price (₹/KG)", min_value=0, value=0, step=10)
-    with add_col4: new_item_s_price = st.number_input("Wholesale Sale Price (₹/KG)", min_value=0, value=0, step=10)
+    with add_col3: new_item_p_price = st.number_input("Initial Cost Rate (₹/KG)", min_value=0.0, value=0.0, step=10.0)
+    with add_col4: new_item_s_price = st.number_input("Initial Sale Rate (₹/KG)", min_value=0.0, value=0.0, step=10.0)
     
     if st.button("Add Variety ✨", use_container_width=True):
         if new_item_name.strip() != "" and new_item_name not in current_inventory:
             current_inventory[new_item_name] = {
-                "stock": new_item_stock, 
-                "purchase_price": new_item_p_price, 
-                "sale_price": new_item_s_price, 
-                "color": "#cbd5e1"
+                "stock": new_item_stock, "purchase_price": new_item_p_price, "sale_price": new_item_s_price, "color": "#cbd5e1"
             }
             save_inventory(current_inventory)
-            add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, "Opening Inventory")
+            add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, 0.0, "Opening Inventory")
             st.session_state.inventory_data = current_inventory
-            st.success(f"Added {new_item_name} with specific buy/sell channels!")
             st.rerun()
 
-# --- DETAILS GRID WITH TWO SEPARATE PRICE EDITORS ---
+# --- DETAILS GRID ---
 st.header("📦 Current Stock & Price Matrix")
 grid_col1, grid_col2 = st.columns(2)
 item_index = 0
@@ -226,50 +223,37 @@ for item_name in list(current_inventory.keys()):
     data = current_inventory[item_name]
     current_grid_col = grid_col1 if item_index % 2 == 0 else grid_col2
     item_index += 1
-    is_low_stock = data["stock"] < 300
-    card_accent_color = "#ef4444" if is_low_stock else data.get("color", "#bef264")
-    title_text_color = "#dc2626" if is_low_stock else "#111827"
-    status_badge = "⚠️ LOW STOCK" if is_low_stock else "Premium Quality"
     
     with current_grid_col:
         with st.container(border=True):
             card_head_col1, card_head_col2 = st.columns([4, 1])
-            with card_head_col1: st.markdown(f"<span style='background-color: {card_accent_color}22; color: {title_text_color}; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 700;'>{status_badge}</span>", unsafe_allow_html=True)
+            with card_head_col1: st.markdown(f"### {item_name}")
             with card_head_col2:
                 if st.button("🗑️", key=f"del_{item_name}", use_container_width=True):
-                    del current_inventory[item_name]
-                    save_inventory(current_inventory)
-                    st.session_state.inventory_data = current_inventory
-                    st.rerun()
+                    del current_inventory[item_name]; save_inventory(current_inventory)
+                    st.session_state.inventory_data = current_inventory; st.rerun()
             
-            st.markdown(f"<h3 style='margin-top: 10px; color: {title_text_color};'>{item_name}</h3>", unsafe_allow_html=True)
-            
-            # Metric Columns
             m1, m2, m3 = st.columns(3)
-            with m1: st.metric(label="Stock Left", value=f"{data['stock']:,} KG")
-            with m2: st.metric(label="Buy Rate", value=f"₹{data['purchase_price']}")
-            with m3: st.metric(label="Sale Rate", value=f"₹{data['sale_price']}")
+            with m1: st.metric(label="Stock Balance", value=f"{data['stock']:,} KG")
+            with m2: st.metric(label="Avg Cost (WAC)", value=f"₹{round(data['purchase_price'], 2)}")
+            with m3: st.metric(label="Target Sale Price", value=f"₹{data['sale_price']}")
             
             st.write("---")
-            st.markdown("<p style='color: #1e293b; font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;'>⚙️ Edit Master Prices</p>", unsafe_allow_html=True)
             edit_p_col, edit_s_col = st.columns(2)
-            with edit_p_col:
-                new_p = st.number_input("Edit Purchase Price", min_value=0, value=data["purchase_price"], step=5, key=f"edit_p_{item_name}")
-            with edit_s_col:
-                new_s = st.number_input("Edit Wholesale Sale Price", min_value=0, value=data["sale_price"], step=5, key=f"edit_s_{item_name}")
+            with edit_p_col: new_p = st.number_input("Override Base Cost (WAC)", min_value=0.0, value=float(data["purchase_price"]), step=5.0, key=f"edit_p_{item_name}")
+            with edit_s_col: new_s = st.number_input("Update Base Selling Price", min_value=0.0, value=float(data["sale_price"]), step=5.0, key=f"edit_s_{item_name}")
                 
             if new_p != data["purchase_price"] or new_s != data["sale_price"]:
                 current_inventory[item_name]["purchase_price"] = new_p
                 current_inventory[item_name]["sale_price"] = new_s
-                save_inventory(current_inventory)
-                st.session_state.inventory_data = current_inventory
-                st.rerun()
+                save_inventory(current_inventory); st.session_state.inventory_data = current_inventory; st.rerun()
 
-# --- HISTORY LOG (WITH RATES AND TOTAL TRANSACTION VALUES) ---
+# --- HISTORY LOG ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
-log_data = load_transactions()
-if len(log_data) > 0:
-    df_logs = pd.DataFrame(log_data)
-    df_logs.columns = ["Timestamp", "Tea Variety", "Transaction Type", "Quantity (KG)", "Rate Used (₹/KG)", "Total Deal Value (₹)", "Party / Details"]
+if len(transactions_history) > 0:
+    df_logs = pd.DataFrame(transactions_history)
+    # Ensure smooth presentation columns layout
+    df_logs = df_logs[["date", "item_name", "type", "quantity", "rate (₹)", "total_amount (₹)", "net_profit_realized (₹)", "party"]]
+    df_logs.columns = ["Timestamp", "Tea Variety", "Type", "Qty (KG)", "Rate Used (₹)", "Total Value (₹)", "Profit Realized (₹)", "Party / Details"]
     st.dataframe(df_logs, use_container_width=True, hide_index=True)
