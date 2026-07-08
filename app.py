@@ -1,6 +1,8 @@
 import streamlit as st
 import json
 import os
+from datetime import datetime
+import pandas as pd
 
 # --- MODERN THEME CONFIGURATION ---
 st.set_page_config(
@@ -27,29 +29,44 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Define the permanent file path name
+# File paths for storage
 DATA_FILE = "tea_stock_data.json"
+LOG_FILE = "transaction_log.json"
 
-# Function to read numbers permanently stored inside the app folder
+# --- DATA STORAGE FUNCTIONS ---
 def load_inventory():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
             return json.load(f)
-    else:
-        # Default starting values if the ledger file doesn't exist yet
-        return {
-            "Assam CTC Tea": {"stock": 1250, "price": 240, "color": "#bef264"},
-            "Darjeeling": {"stock": 250, "price": 650, "color": "#86efac"},
-            "Nilgiri Green": {"stock": 800, "price": 380, "color": "#6ee7b7"},
-            "Orthodox Leaf": {"stock": 150, "price": 420, "color": "#a7f3d0"}
-        }
+    return {
+        "Assam CTC Tea": {"stock": 1250, "price": 240, "color": "#bef264"},
+        "Darjeeling": {"stock": 250, "price": 650, "color": "#86efac"}
+    }
 
-# Function to permanently write updates back down into the file
 def save_inventory(updated_inventory):
     with open(DATA_FILE, "w") as f:
         json.dump(updated_inventory, f, indent=4)
 
-# Load into layout view memory state
+def load_transactions():
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def add_transaction(item_name, action_type, quantity, party_details):
+    transactions = load_transactions()
+    new_log = {
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "item_name": item_name,
+        "type": action_type,  # "PURCHASE (Stock In)" or "SALE (Stock Out)"
+        "quantity": int(quantity),
+        "party": party_details if party_details.strip() != "" else "N/A"
+    }
+    transactions.insert(0, new_log)  # Put newest transaction at the top
+    with open(LOG_FILE, "w") as f:
+        json.dump(transactions, f, indent=4)
+
+# Initialize Session States
 if "inventory_data" not in st.session_state:
     st.session_state.inventory_data = load_inventory()
 
@@ -59,7 +76,7 @@ current_inventory = st.session_state.inventory_data
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #64748b; font-size: 1rem; margin-bottom: 1.5rem;'>Wholesale Stock Management Dashboard</p>", unsafe_allow_html=True)
 
-# --- TOP BUSINESS OVERVIEW METRICS ---
+# --- OVERVIEW METRICS ---
 st.header("📊 Overview")
 with st.container():
     col1, col2, col3 = st.columns(3)
@@ -74,9 +91,43 @@ with st.container():
     with col3:
         st.metric(label="Total Value", value=f"₹{total_value_inr:,}")
 
-# --- ADD NEW ITEM SECTION ---
+# --- NEW TRANSACTION SECTION (STOCK IN / STOCK OUT) ---
 st.write("---")
-with st.expander("➕ Add New Tea Variety to Inventory", expanded=False):
+st.header("📝 Log New Transaction")
+with st.container():
+    tx_col1, tx_col2, tx_col3, tx_col4 = st.columns([1.5, 1, 1, 1.5])
+    
+    with tx_col1:
+        selected_item = st.selectbox("Select Tea Variety", list(current_inventory.keys()))
+    with tx_col2:
+        transaction_type = st.radio("Action Type", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
+    with tx_col3:
+        tx_quantity = st.number_input("Quantity (KG)", min_value=1, value=50, step=50)
+    with tx_col4:
+        party_info = st.text_input("Party / Supplier Name", placeholder="e.g., Balaji Traders")
+        
+    if st.button("Submit Transaction ⚡", use_container_width=True):
+        current_stock = current_inventory[selected_item]["stock"]
+        
+        if transaction_type == "SALE (Stock Out)" and tx_quantity > current_stock:
+            st.error(f"❌ Not enough stock! You only have {current_stock} KG of {selected_item} left.")
+        else:
+            # Update the math automatically
+            if transaction_type == "PURCHASE (Stock In)":
+                current_inventory[selected_item]["stock"] += tx_quantity
+            else:
+                current_inventory[selected_item]["stock"] -= tx_quantity
+                
+            # Save both the stock update and log record
+            save_inventory(current_inventory)
+            add_transaction(selected_item, transaction_type, tx_quantity, party_info)
+            
+            st.session_state.inventory_data = current_inventory
+            st.success(f"Successfully processed transaction for {selected_item}!")
+            st.rerun()
+
+# --- ADD NEW VARIETY EXPANDER ---
+with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False):
     add_col1, add_col2, add_col3 = st.columns([2, 1, 1])
     with add_col1:
         new_item_name = st.text_input("Tea Variety Name", placeholder="e.g., Earl Grey Premium")
@@ -85,16 +136,17 @@ with st.expander("➕ Add New Tea Variety to Inventory", expanded=False):
     with add_col3:
         new_item_price = st.number_input("Wholesale Rate (₹/KG)", min_value=0, value=0, step=10)
         
-    if st.button("Add to Dashboard ✨", use_container_width=True):
+    if st.button("Add Variety ✨", use_container_width=True):
         if new_item_name.strip() != "" and new_item_name not in current_inventory:
             current_inventory[new_item_name] = {"stock": new_item_stock, "price": new_item_price, "color": "#cbd5e1"}
             save_inventory(current_inventory)
+            add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, "Opening Inventory")
             st.session_state.inventory_data = current_inventory
-            st.success(f"Added and saved {new_item_name} permanently!")
+            st.success(f"Added {new_item_name}!")
             st.rerun()
 
-# --- 2-COLUMN PREMIUM GRID ---
-st.header("📦 Stock Details")
+# --- STOCK DETAILS GRID ---
+st.header("📦 Current Stock & Pricing")
 grid_col1, grid_col2 = st.columns(2)
 item_index = 0
 
@@ -106,13 +158,13 @@ for item_name in list(current_inventory.keys()):
     is_low_stock = data["stock"] < 300
     card_accent_color = "#ef4444" if is_low_stock else data.get("color", "#bef264")
     title_text_color = "#dc2626" if is_low_stock else "#111827"
-    status_badge = "<span style='color: #dc2626; font-weight: 700; font-size: 0.85rem;'>⚠️ LOW STOCK ALERT</span>" if is_low_stock else "<span style='color: #64748b;'>Nagbari Premium Quality</span>"
+    status_badge = "⚠️ LOW STOCK" if is_low_stock else "Premium Quality"
     
     with current_grid_col:
         with st.container(border=True):
             card_head_col1, card_head_col2 = st.columns([4, 1])
             with card_head_col1:
-                st.markdown(f"<div style='height: 5px; width: 60px; background-color: {card_accent_color}; border-radius: 2px; margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"<span style='background-color: {card_accent_color}22; color: {title_text_color}; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 700;'>{status_badge}</span>", unsafe_allow_html=True)
             with card_head_col2:
                 if st.button("🗑️", key=f"del_{item_name}", use_container_width=True):
                     del current_inventory[item_name]
@@ -120,33 +172,29 @@ for item_name in list(current_inventory.keys()):
                     st.session_state.inventory_data = current_inventory
                     st.rerun()
             
-            st.markdown(f"<h3 style='color: {title_text_color};'>{item_name}</h3>", unsafe_allow_html=True)
-            st.markdown(f"<p style='margin-top: 2px; margin-bottom: 12px;'>{status_badge}</p>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='margin-top: 10px; color: {title_text_color};'>{item_name}</h3>", unsafe_allow_html=True)
             
             metric_col1, metric_col2 = st.columns(2)
             with metric_col1:
-                st.metric(label="Available Stock", value=f"{data['stock']} KG")
+                st.metric(label="Available Stock", value=f"{data['stock']:,} KG")
             with metric_col2:
-                st.metric(label="Wholesale Rate", value=f"₹{data['price']} / KG")
-            
-            st.write("---")
-            st.markdown("<p style='color: #1e293b; font-weight: 600; font-size: 0.9rem; margin-bottom: 8px;'>⚙️ Quick Update Fields</p>", unsafe_allow_html=True)
-            edit_stock_col, edit_price_col, save_btn_col = st.columns([1.2, 1.2, 1])
-            
-            with edit_stock_col:
-                st.markdown("<div class='field-label'>New Stock (KG)</div>", unsafe_allow_html=True)
-                new_qty = st.number_input("Stock", min_value=0, value=data["stock"], step=50, key=f"stock_in_{item_name}", label_visibility="collapsed")
-            
-            with edit_price_col:
-                st.markdown("<div class='field-label'>New Rate (₹)</div>", unsafe_allow_html=True)
+                st.markdown("<div class='field-label'>Wholesale Rate (₹/KG)</div>", unsafe_allow_html=True)
                 new_price = st.number_input("Price", min_value=0, value=data["price"], step=5, key=f"price_in_{item_name}", label_visibility="collapsed")
-                
-            with save_btn_col:
-                st.write("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-                if st.button("Save ✅", key=f"save_all_{item_name}", use_container_width=True):
-                    current_inventory[item_name]["stock"] = new_qty
+                if new_price != data["price"]:
                     current_inventory[item_name]["price"] = new_price
                     save_inventory(current_inventory)
                     st.session_state.inventory_data = current_inventory
-                    st.success("Saved perfectly!")
                     st.rerun()
+
+# --- LIVE TRANSACTION LEDGER HISTORY ---
+st.write("---")
+st.header("📜 Recent Transactions History Log")
+log_data = load_transactions()
+
+if len(log_data) > 0:
+    df_logs = pd.DataFrame(log_data)
+    # Rename columns to look professional
+    df_logs.columns = ["Timestamp", "Tea Variety", "Transaction Type", "Quantity (KG)", "Party / Details"]
+    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+else:
+    st.info("No transactions logged yet. Submit a purchase or sale above to see history records.")
