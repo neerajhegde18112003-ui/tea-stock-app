@@ -34,7 +34,7 @@ LOG_FILE = "transaction_log.json"
 AUTH_FILE = "auth_config.json"
 
 # --- OWNER CONFIGURATION ---
-OWNER_EMAIL = "your-email@gmail.com" 
+OWNER_EMAIL = "neerajhegde547@gmail.com" 
 
 # --- SECURITY FUNCTIONS ---
 def load_auth():
@@ -110,7 +110,7 @@ def generate_invoice_pdf(tx):
     
     # Header Branding
     pdf.set_font("Helvetica", "B", 20)
-    pdf.set_text_color(22, 101, 52) # Forest green
+    pdf.set_text_color(22, 101, 52) 
     pdf.cell(0, 12, "NAGBARI TRADERS", ln=True, align="C")
     
     pdf.set_font("Helvetica", "", 10)
@@ -121,18 +121,18 @@ def generate_invoice_pdf(tx):
     # Invoice Metadata Table
     pdf.set_text_color(30, 41, 59)
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, f"TRANSACTION RECEIPT", ln=True)
+    pdf.cell(0, 8, "TRANSACTION RECEIPT", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(4)
     
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(50, 6, f"Date & Time:", 0)
+    pdf.cell(50, 6, "Date & Time:", 0)
     pdf.cell(0, 6, f"{tx.get('date', 'N/A')}", 1, ln=True)
-    pdf.cell(50, 6, f"Party / Business Name:", 0)
+    pdf.cell(50, 6, "Party / Business Name:", 0)
     pdf.cell(0, 6, f"{tx.get('party', 'N/A')}", 1, ln=True)
-    pdf.cell(50, 6, f"Transaction Type:", 0)
+    pdf.cell(50, 6, "Transaction Type:", 0)
     pdf.cell(0, 6, f"{tx.get('type', 'N/A')}", 1, ln=True)
-    pdf.cell(50, 6, f"Payment Mode Assigned:", 0)
+    pdf.cell(50, 6, "Payment Mode Assigned:", 0)
     pdf.cell(0, 6, f"{tx.get('payment_status', 'N/A')}", 1, ln=True)
     pdf.ln(8)
     
@@ -162,48 +162,3 @@ def generate_invoice_pdf(tx):
     
     # Authorized Signatory Line
     pdf.set_font("Helvetica", "I", 9)
-    pdf.cell(0, 5, "Thank you for doing business with Nagbari Traders.", ln=True, align="L")
-    pdf.ln(10)
-    pdf.cell(0, 5, "Authorized Signature: _______________________", ln=True, align="R")
-    
-    return bytes(pdf.output())
-
-# --- LOGIN PROTECTION ---
-auth_data = load_auth()
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center; color: #166534; font-weight: 700; margin-top: 5rem;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.2, 1])
-    with col:
-        with st.container(border=True):
-            user_pass = st.text_input("Enter Admin Password", type="password")
-            if st.button("Login 🔓", use_container_width=True):
-                if user_pass == auth_data["password"]: st.session_state.logged_in = True; st.rerun()
-                else: st.error("❌ Incorrect Password.")
-    st.stop()
-
-# --- INITIALIZE DATA ---
-if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
-current_inventory = st.session_state.inventory_data
-transactions_history = load_transactions()
-
-# --- FINANCIAL METRICS LOGIC ---
-# --- FINANCIAL METRICS LOGIC ---
-realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx.get("type") == "SALE (Stock Out)")
-
-base_receivable = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "SALE (Stock Out)" and tx.get("payment_status") == "CREDIT")
-collections_received = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "CUSTOMER PAYMENT (Money Received)")
-accounts_receivable = max(0.0, base_receivable - collections_received)
-
-base_payable = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "PURCHASE (Stock In)" and tx.get("payment_status") == "CREDIT")
-payouts_settled = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "SUPPLIER PAYMENT (Money Paid)")
-accounts_payable = max(0.0, base_payable - payouts_settled)
-
-cash_in = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "SALE (Stock Out)" or tx.get("type") == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "CASH")
-cash_out = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "PURCHASE (Stock In)" or tx.get("type") == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "CASH")
-net_cash_flow = cash_in - cash_out
-
-bank_in = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "SALE (Stock Out)" or tx.get("type") == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "BANK")
-bank_out = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "PURCHASE (Stock In)" or tx.get("type") == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "BANK")
-net_bank_flow = bank_in - bank_out
