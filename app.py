@@ -189,4 +189,21 @@ current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
 # --- FINANCIAL METRICS LOGIC ---
-realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx.get("type")
+# --- FINANCIAL METRICS LOGIC ---
+realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx.get("type") == "SALE (Stock Out)")
+
+base_receivable = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "SALE (Stock Out)" and tx.get("payment_status") == "CREDIT")
+collections_received = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "CUSTOMER PAYMENT (Money Received)")
+accounts_receivable = max(0.0, base_receivable - collections_received)
+
+base_payable = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "PURCHASE (Stock In)" and tx.get("payment_status") == "CREDIT")
+payouts_settled = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if tx.get("type") == "SUPPLIER PAYMENT (Money Paid)")
+accounts_payable = max(0.0, base_payable - payouts_settled)
+
+cash_in = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "SALE (Stock Out)" or tx.get("type") == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "CASH")
+cash_out = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "PURCHASE (Stock In)" or tx.get("type") == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "CASH")
+net_cash_flow = cash_in - cash_out
+
+bank_in = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "SALE (Stock Out)" or tx.get("type") == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "BANK")
+bank_out = sum(float(tx.get("total_amount (₹)", 0)) for tx in transactions_history if (tx.get("type") == "PURCHASE (Stock In)" or tx.get("type") == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "BANK")
+net_bank_flow = bank_in - bank_out
