@@ -289,3 +289,12 @@ st.write("---")
 st.header("📦 Current Stock & Batch Breakdown Matrix")
 grid_col1, grid_col2 = st.columns(2)
 item_
+# --- NO TABS BINDING: ITEM TILES MATRIX DISPLAY ---
+st.write("---")
+st.header("📦 Current Stock & Batch Breakdown Matrix")
+grid_col1, grid_col2 = st.columns(2)
+item_index = 0  # <--- Make sure this line says item_index = 0
+for item_name in list(current_inventory.keys()):
+    data = current_inventory[item_name]
+    current_grid_col = grid_col1 if item_index % 2 == 0 else grid_col2
+    item_index += 1  # <--- Make sure this line says item_index += 1
