@@ -207,13 +207,39 @@ with tab1:
             
         if st.button("Submit Transaction ⚡", use_container_width=True):
             item_data = current_inventory[selected_item]
-            margin_earned = 0.0; cost_details_str = ""
+            margin_earned = 0.0
+            cost_details_str = ""
             status_clean = "CASH" if "CASH" in pay_status else "BANK" if "BANK" in pay_status else "CREDIT"
             
             if transaction_type == "SALE (Stock Out)" and tx_quantity > current_total_stock:
                 st.error(f"❌ Low Stock Alert! You only have {current_total_stock} KG left.")
             else:
                 if transaction_type == "PURCHASE (Stock In)":
-                if "batches" not in item_data: item_data["batches"] = []
-                item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
-                cost_details_str = f"Added new batch @ ₹{tx_rate}/KG"
+                    if "batches" not in item_data: 
+                        item_data["batches"] = []
+                    item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
+                    cost_details_str = f"Added new batch @ ₹{tx_rate}/KG"
+                else:
+                    remaining_to_sell = int(tx_quantity)
+                    cost_breakdown = []
+                    while remaining_to_sell > 0 and len(item_data["batches"]) > 0:
+                        oldest_batch = item_data["batches"][0]
+                        if oldest_batch["qty"] <= remaining_to_sell:
+                            qty_taken = oldest_batch["qty"]
+                            margin_earned += (float(tx_rate) - float(oldest_batch["cost"])) * qty_taken
+                            cost_breakdown.append(f"{qty_taken}KG @ ₹{oldest_batch['cost']}")
+                            remaining_to_sell -= qty_taken
+                            item_data["batches"].pop(0)
+                        else:
+                            qty_taken = remaining_to_sell
+                            margin_earned += (float(tx_rate) - float(oldest_batch["cost"])) * qty_taken
+                            cost_breakdown.append(f"{qty_taken}KG @ ₹{oldest_batch['cost']}")
+                            oldest_batch["qty"] -= remaining_to_sell
+                            remaining_to_sell = 0
+                    cost_details_str = ", ".join(cost_breakdown)
+                    
+                save_inventory(current_inventory)
+                add_transaction(selected_item, transaction_type, tx_quantity, tx_rate, margin_earned, cost_details_str, status_clean, party_info)
+                st.session_state.inventory_data = current_inventory
+                st.success("Stock logged perfectly!")
+                st.rerun()
