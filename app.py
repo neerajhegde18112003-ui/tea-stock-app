@@ -287,7 +287,6 @@ with tab2:
             st.rerun()
 
 # --- ADD VARIETY EXPANDER ---
-# --- ADD VARIETY EXPANDER ---
 with st.expander("Add New Variety"):
     new_item_name = st.text_input("Variety Name")
     new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0)
@@ -301,3 +300,63 @@ with st.expander("Add New Variety"):
             add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, 0.0, "Opening Inventory", "CASH", "Opening Inventory")
             st.session_state.inventory_data = current_inventory
             st.rerun()
+
+# --- ITEM TILES MATRIX DISPLAY ---
+st.write("---")
+st.header("📦 Current Stock & Batch Breakdown Matrix")
+grid_col1, grid_col2 = st.columns(2)
+item_index = 0
+
+for item_name in list(current_inventory.keys()):
+    data = current_inventory[item_name]
+    current_grid_col = grid_col1 if item_index % 2 == 0 else grid_col2
+    item_index += 1
+    batches_list = data.get("batches", [])
+    total_item_stock = sum(b["qty"] for b in batches_list)
+    
+    with current_grid_col:
+        with st.container(border=True):
+            st.markdown(f"### {item_name}")
+            st.markdown("**📋 Live Unsold Batches:**")
+            if len(batches_list) == 0:
+                st.write("*Out of Stock*")
+            else:
+                for idx, b in enumerate(batches_list):
+                    st.write(f"• **Batch #{idx+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
+            st.write("---")
+            m1, m2 = st.columns(2)
+            with m1: 
+                st.metric(label="Total Physical Stock", value=f"{total_item_stock:,} KG")
+            with m2: 
+                st.metric(label="Base Target Selling Price", value=f"₹{data.get('sale_price', 0.0)}")
+            
+            new_s = st.number_input("Update Target Selling Price (₹/KG)", min_value=0.0, value=float(data.get('sale_price', 0.0)), step=5.0, key=f"edit_s_{item_name}")
+            if new_s != data.get('sale_price', 0.0):
+                current_inventory[item_name]["sale_price"] = new_s
+                save_inventory(current_inventory)
+                st.session_state.inventory_data = current_inventory
+                st.rerun()
+
+# --- RECENT LEDGER HISTORY LOG ---
+st.write("---")
+st.header("📜 Recent Transactions History Log")
+if len(transactions_history) > 0:
+    for tx in transactions_history:
+        with st.container():
+            col_d1, col_d2, col_d3, col_d4, col_d5 = st.columns([1.5, 2, 1, 1.2, 1.5])
+            
+            tx_date = tx.get("date", "N/A")
+            tx_item = tx.get("item_name", "N/A")
+            tx_type = tx.get("type", "N/A")
+            tx_qty = tx.get("quantity", 0)
+            tx_amt = tx.get("total_amount (₹)", 0.0)
+            tx_party = tx.get("party", "N/A")
+            tx_status = tx.get("payment_status", "N/A")
+            
+            with col_d1: st.write(f"🕒 `{tx_date}`")
+            with col_d2: st.write(f"**{tx_item}** ({tx_type})")
+            with col_d3: st.write(f"{tx_qty:,} KG" if tx_qty > 0 else "-")
+            with col_d4: st.write(f"₹ {tx_amt:,}")
+            with col_d5: st.write(f"👤 {tx_party} `[{tx_status}]`")
+else:
+    st.info("No transactions logged yet.")
