@@ -86,17 +86,17 @@ def load_transactions():
 
 def add_transaction(item_name, action_type, quantity, rate, margin_earned, cost_details, payment_status, party_details):
     transactions = load_transactions()
-    total_amount = int(quantity) * float(rate)
+    total_amount = int(quantity) * float(rate) if quantity > 0 else float(rate)
     new_log = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "item_name": item_name,
         "type": action_type,
         "quantity": int(quantity),
-        "rate (₹)": float(rate),
+        "rate (₹)": float(rate) if quantity > 0 else 0.0,
         "total_amount (₹)": total_amount,
         "net_profit_realized (₹)": float(margin_earned),
         "cost_used_details": cost_details,
-        "payment_status": payment_status,  # "CASH", "BANK", or "CREDIT"
+        "payment_status": payment_status,
         "party": party_details if party_details.strip() != "" else "N/A"
     }
     transactions.insert(0, new_log)
@@ -122,18 +122,28 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
-# --- CALCULATE OUTSTANDING CREDIT BALANCES & CHANNELS ---
+# --- FINANCIAL ADVANCED LEDGER MATHS ---
 realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx["type"] == "SALE (Stock Out)")
 
-accounts_payable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "PURCHASE (Stock In)" and tx.get("payment_status") == "CREDIT")
-accounts_receivable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SALE (Stock Out)" and tx.get("payment_status") == "CREDIT")
+# Accounts Receivable calculations (Sales Credit minus Collections received later)
+base_receivable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SALE (Stock Out)" and tx.get("payment_status") == "CREDIT")
+collections_received = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "CUSTOMER PAYMENT (Money Received)")
+accounts_receivable = max(0.0, base_receivable - collections_received)
 
-# Cash vs Bank Flows (Incoming Sales vs Outgoing Purchases)
-net_cash_flow = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SALE (Stock Out)" and tx.get("payment_status") == "CASH") - \
-                sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "PURCHASE (Stock In)" and tx.get("payment_status") == "CASH")
+# Accounts Payable calculations (Purchases Credit minus Payouts settled later)
+base_payable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "PURCHASE (Stock In)" and tx.get("payment_status") == "CREDIT")
+payouts_settled = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SUPPLIER PAYMENT (Money Paid)")
+accounts_payable = max(0.0, base_payable - payouts_settled)
 
-net_bank_flow = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SALE (Stock Out)" and tx.get("payment_status") == "BANK") - \
-                sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "PURCHASE (Stock In)" and tx.get("payment_status") == "BANK")
+# Cash box position entries tracking
+cash_in = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "SALE (Stock Out)" or tx["type"] == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "CASH")
+cash_out = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "PURCHASE (Stock In)" or tx["type"] == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "CASH")
+net_cash_flow = cash_in - cash_out
+
+# Bank balance position entries tracking
+bank_in = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "SALE (Stock Out)" or tx["type"] == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "BANK")
+bank_out = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "PURCHASE (Stock In)" or tx["type"] == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "BANK")
+net_bank_flow = bank_in - bank_out
 
 # --- SIDEBAR PANEL ---
 with st.sidebar:
@@ -173,113 +183,37 @@ with st.container():
     with flow_col1: st.metric(label="Net Cash Box Counter 💵", value=f"₹{round(net_cash_flow, 2):,}", delta="Physical Cash On Hand")
     with flow_col2: st.metric(label="Net Bank Balance Position 🏦", value=f"₹{round(net_bank_flow, 2):,}", delta="Digital Funds (UPI/NEFT)")
 
-# --- LOG TRANSACTION SECTION (WITH SEPARATE PAY MODES) ---
+# --- MAIN FORM MANAGEMENT TABS ---
 st.write("---")
-st.header("📝 Log New Transaction")
-with st.container():
-    tx_col1, tx_col2, tx_col3, tx_col4 = st.columns([1.5, 1, 1, 1.5])
-    with tx_col1: selected_item = st.selectbox("Select Tea Variety", list(current_inventory.keys()))
-    with tx_col2: transaction_type = st.radio("Action Type", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
-    with tx_col3: tx_quantity = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
-    
-    batches_list = current_inventory[selected_item].get("batches", [])
-    current_total_stock = sum(b["qty"] for b in batches_list)
-    latest_cost = batches_list[-1]["cost"] if len(batches_list) > 0 else 0.0
-    default_rate = latest_cost if transaction_type == "PURCHASE (Stock In)" else current_inventory[selected_item]["sale_price"]
-    
-    with tx_col4: 
-        tx_rate = st.number_input("Transaction Rate (₹/KG)", min_value=0.0, value=float(default_rate), step=5.0, key=f"tx_rate_{selected_item}_{transaction_type}")
-        pay_status = st.selectbox("Payment Mode", ["CASH (Hand-to-Hand Cash)", "BANK (UPI/NEFT/Cheque)", "CREDIT (Outstanding Balance)"])
-        party_info = st.text_input("Party / Supplier Name", placeholder="e.g., Balaji Traders")
+tab1, tab2 = st.tabs(["📝 Log Stock Transaction (Goods)", "💰 Log Pure Cash Payment (No Goods)"])
+
+with tab1:
+    st.subheader("Record Purchases & Sales of Tea")
+    with st.container():
+        tx_col1, tx_col2, tx_col3, tx_col4 = st.columns([1.5, 1, 1, 1.5])
+        with tx_col1: selected_item = st.selectbox("Select Tea Variety", list(current_inventory.keys()))
+        with tx_col2: transaction_type = st.radio("Action Type", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
+        with tx_col3: tx_quantity = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
         
-    if st.button("Submit Transaction ⚡", use_container_width=True):
-        item_data = current_inventory[selected_item]
-        margin_earned = 0.0
-        cost_details_str = ""
+        batches_list = current_inventory[selected_item].get("batches", [])
+        current_total_stock = sum(b["qty"] for b in batches_list)
+        latest_cost = batches_list[-1]["cost"] if len(batches_list) > 0 else 0.0
+        default_rate = latest_cost if transaction_type == "PURCHASE (Stock In)" else current_inventory[selected_item]["sale_price"]
         
-        # Isolate clean payment status key
-        if "CASH" in pay_status: status_clean = "CASH"
-        elif "BANK" in pay_status: status_clean = "BANK"
-        else: status_clean = "CREDIT"
-        
-        if transaction_type == "SALE (Stock Out)" and tx_quantity > current_total_stock:
-            st.error(f"❌ Low Stock Alert! You only have {current_total_stock} KG left.")
-        else:
-            if transaction_type == "PURCHASE (Stock In)":
-                if "batches" not in item_data: item_data["batches"] = []
-                item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
-                cost_details_str = f"Added new batch @ ₹{tx_rate}/KG"
+        with tx_col4: 
+            tx_rate = st.number_input("Transaction Rate (₹/KG)", min_value=0.0, value=float(default_rate), step=5.0, key=f"tx_rate_{selected_item}_{transaction_type}")
+            pay_status = st.selectbox("Payment Mode", ["CASH (Hand-to-Hand Cash)", "BANK (UPI/NEFT/Cheque)", "CREDIT (Outstanding Balance)"], key="goods_pay_mode")
+            party_info = st.text_input("Party / Supplier Name", placeholder="e.g., Balaji Traders", key="goods_party")
+            
+        if st.button("Submit Transaction ⚡", use_container_width=True):
+            item_data = current_inventory[selected_item]
+            margin_earned = 0.0; cost_details_str = ""
+            status_clean = "CASH" if "CASH" in pay_status else "BANK" if "BANK" in pay_status else "CREDIT"
+            
+            if transaction_type == "SALE (Stock Out)" and tx_quantity > current_total_stock:
+                st.error(f"❌ Low Stock Alert! You only have {current_total_stock} KG left.")
             else:
-                remaining_to_sell = int(tx_quantity)
-                cost_breakdown = []
-                while remaining_to_sell > 0 and len(item_data["batches"]) > 0:
-                    oldest_batch = item_data["batches"][0]
-                    if oldest_batch["qty"] <= remaining_to_sell:
-                        qty_taken = oldest_batch["qty"]
-                        margin_earned += (float(tx_rate) - float(oldest_batch["cost"])) * qty_taken
-                        cost_breakdown.append(f"{qty_taken}KG @ ₹{oldest_batch['cost']}")
-                        remaining_to_sell -= qty_taken
-                        item_data["batches"].pop(0)
-                    else:
-                        qty_taken = remaining_to_sell
-                        margin_earned += (float(tx_rate) - float(oldest_batch["cost"])) * qty_taken
-                        cost_breakdown.append(f"{qty_taken}KG @ ₹{oldest_batch['cost']}")
-                        oldest_batch["qty"] -= remaining_to_sell
-                        remaining_to_sell = 0
-                cost_details_str = ", ".join(cost_breakdown)
-                
-            save_inventory(current_inventory)
-            add_transaction(selected_item, transaction_type, tx_quantity, tx_rate, margin_earned, cost_details_str, status_clean, party_info)
-            st.session_state.inventory_data = current_inventory
-            st.success("Ledger and Payment mode logged perfectly!")
-            st.rerun()
-
-# --- ADD VARIETY ---
-with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False):
-    add_col1, add_col2, add_col3, add_col4 = st.columns([1.5, 1, 1, 1])
-    with add_col1: new_item_name = st.text_input("Tea Variety Name")
-    with add_col2: new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0, step=50)
-    with add_col3: new_item_p_price = st.number_input("Initial Cost (₹/KG)", min_value=0.0, value=0.0, step=10.0)
-    with add_col4: new_item_s_price = st.number_input("Target Sale Rate (₹/KG)", min_value=0.0, value=0.0, step=10.0)
-    if st.button("Add Variety ✨", use_container_width=True):
-        if new_item_name.strip() != "" and new_item_name not in current_inventory:
-            batches = [{"qty": int(new_item_stock), "cost": float(new_item_p_price)}] if new_item_stock > 0 else []
-            current_inventory[new_item_name] = {"sale_price": new_item_s_price, "color": "#cbd5e1", "batches": batches}
-            save_inventory(current_inventory)
-            add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, 0.0, "Opening Inventory", "CASH", "Opening Inventory")
-            st.session_state.inventory_data = current_inventory; st.rerun()
-
-# --- DETAILS GRID ---
-st.header("📦 Current Stock & Batch Breakdown Matrix")
-grid_col1, grid_col2 = st.columns(2)
-item_index = 0
-for item_name in list(current_inventory.keys()):
-    data = current_inventory[item_name]
-    current_grid_col = grid_col1 if item_index % 2 == 0 else grid_col2
-    item_index += 1
-    batches_list = data.get("batches", [])
-    total_item_stock = sum(b["qty"] for b in batches_list)
-    with current_grid_col:
-        with st.container(border=True):
-            st.markdown(f"### {item_name}")
-            st.markdown("**📋 Live Unsold Batches:**")
-            if len(batches_list) == 0: st.write("*Out of Stock*")
-            else:
-                for idx, b in enumerate(batches_list): st.write(f"• **Batch #{idx+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
-            st.write("---")
-            m1, m2 = st.columns(2)
-            with m1: st.metric(label="Total Physical Stock", value=f"{total_item_stock:,} KG")
-            with m2: st.metric(label="Base Target Selling Price", value=f"₹{data['sale_price']}")
-            new_s = st.number_input("Update Target Selling Price (₹/KG)", min_value=0.0, value=float(data["sale_price"]), step=5.0, key=f"edit_s_{item_name}")
-            if new_s != data["sale_price"]:
-                current_inventory[item_name]["sale_price"] = new_s
-                save_inventory(current_inventory); st.session_state.inventory_data = current_inventory; st.rerun()
-
-# --- HISTORY LOG ---
-st.write("---")
-st.header("📜 Recent Transactions History Log")
-if len(transactions_history) > 0:
-    df_logs = pd.DataFrame(transactions_history)
-    df_logs = df_logs[["date", "item_name", "type", "quantity", "rate (₹)", "total_amount (₹)", "net_profit_realized (₹)", "payment_status", "party"]]
-    df_logs.columns = ["Timestamp", "Tea Variety", "Type", "Qty (KG)", "Rate Used (₹)", "Total Value (₹)", "Profit (₹)", "Payment Mode", "Party / Details"]
-    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                if transaction_type == "PURCHASE (Stock In)":
+                    if "batches" not in item_data: item_data["batches"] = []
+                    item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
+                    cost_details_str = f"Added new batch @ ₹{tx_
