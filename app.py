@@ -144,7 +144,6 @@ def generate_invoice_pdf(tx):
     pdf.cell(40, 8, "Total Value (Rs)", 1, 1, "C")
     
     pdf.set_font("Helvetica", "", 10)
-    # Handle normal stock items vs raw entries
     particulars = tx['item_name'] if tx['quantity'] > 0 else f"Account Entry: {tx['cost_used_details']}"
     qty_str = f"{tx['quantity']:,} KG" if tx['quantity'] > 0 else "-"
     rate_str = f"Rs {tx['rate (₹)']}" if tx['quantity'] > 0 else "-"
@@ -161,7 +160,8 @@ def generate_invoice_pdf(tx):
     pdf.ln(10)
     pdf.cell(0, 5, "Authorized Signature: _______________________", ln=True, align="R")
     
-    return pdf.output()
+    # The explicit bytes fix right here:
+    return bytes(pdf.output())
 
 # --- LOGIN PROTECTION ---
 auth_data = load_auth()
