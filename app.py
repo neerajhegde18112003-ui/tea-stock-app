@@ -122,25 +122,21 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
-# --- FINANCIAL ADVANCED LEDGER MATHS ---
+# --- FINANCIAL METRICS LOGIC ---
 realized_net_profit = sum(float(tx.get("net_profit_realized (₹)", 0)) for tx in transactions_history if tx["type"] == "SALE (Stock Out)")
 
-# Accounts Receivable calculations (Sales Credit minus Collections received later)
 base_receivable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SALE (Stock Out)" and tx.get("payment_status") == "CREDIT")
 collections_received = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "CUSTOMER PAYMENT (Money Received)")
 accounts_receivable = max(0.0, base_receivable - collections_received)
 
-# Accounts Payable calculations (Purchases Credit minus Payouts settled later)
 base_payable = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "PURCHASE (Stock In)" and tx.get("payment_status") == "CREDIT")
 payouts_settled = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if tx["type"] == "SUPPLIER PAYMENT (Money Paid)")
 accounts_payable = max(0.0, base_payable - payouts_settled)
 
-# Cash box position entries tracking
 cash_in = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "SALE (Stock Out)" or tx["type"] == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "CASH")
 cash_out = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "PURCHASE (Stock In)" or tx["type"] == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "CASH")
 net_cash_flow = cash_in - cash_out
 
-# Bank balance position entries tracking
 bank_in = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "SALE (Stock Out)" or tx["type"] == "CUSTOMER PAYMENT (Money Received)") and tx.get("payment_status") == "BANK")
 bank_out = sum(float(tx["total_amount (₹)"]) for tx in transactions_history if (tx["type"] == "PURCHASE (Stock In)" or tx["type"] == "SUPPLIER PAYMENT (Money Paid)") and tx.get("payment_status") == "BANK")
 net_bank_flow = bank_in - bank_out
@@ -167,7 +163,7 @@ with st.sidebar:
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #64748b; font-size: 1rem; margin-bottom: 1.5rem;'>Wholesale Stock Management Dashboard</p>", unsafe_allow_html=True)
 
-# --- OVERVIEW METRICS WITH CREDIT BALANCES ---
+# --- OVERVIEW METRICS PANEL ---
 st.header("📊 Financial Ledger Overview")
 with st.container():
     top_col1, top_col2, top_col3, top_col4 = st.columns(4)
@@ -175,15 +171,15 @@ with st.container():
     
     with top_col1: st.metric(label="Total Stock Balance", value=f"{total_stock_kg:,} KG")
     with top_col2: st.metric(label="Total Accumulated Profit 💰", value=f"₹{round(realized_net_profit, 2):,}")
-    with top_col3: st.metric(label="Accounts Receivable (From Customers) 📈", value=f"₹{round(accounts_receivable, 2):,}")
-    with top_col4: st.metric(label="Accounts Payable (To Suppliers) 📉", value=f"₹{round(accounts_payable, 2):,}")
+    with top_col3: st.metric(label="Accounts Receivable 📈", value=f"₹{round(accounts_receivable, 2):,}")
+    with top_col4: st.metric(label="Accounts Payable 📉", value=f"₹{round(accounts_payable, 2):,}")
 
 with st.container():
     flow_col1, flow_col2 = st.columns(2)
     with flow_col1: st.metric(label="Net Cash Box Counter 💵", value=f"₹{round(net_cash_flow, 2):,}", delta="Physical Cash On Hand")
     with flow_col2: st.metric(label="Net Bank Balance Position 🏦", value=f"₹{round(net_bank_flow, 2):,}", delta="Digital Funds (UPI/NEFT)")
 
-# --- MAIN FORM MANAGEMENT TABS ---
+# --- MAIN INPUT TABS ---
 st.write("---")
 tab1, tab2 = st.tabs(["📝 Log Stock Transaction (Goods)", "💰 Log Pure Cash Payment (No Goods)"])
 
@@ -243,3 +239,53 @@ with tab1:
                 st.session_state.inventory_data = current_inventory
                 st.success("Stock logged perfectly!")
                 st.rerun()
+
+with tab2:
+    st.subheader("Record Pure Bill Settlements & Advances")
+    with st.container():
+        adj_col1, adj_col2, adj_col3 = st.columns(3)
+        with adj_col1:
+            cash_tx_type = st.radio("Cash Flow Direction", ["CUSTOMER PAYMENT (Money Received)", "SUPPLIER PAYMENT (Money Paid)"])
+        with adj_col2:
+            adj_amount = st.number_input("Amount Paid/Received (₹)", min_value=1.0, value=5000.0, step=500.0)
+            adj_mode = st.selectbox("Channel Used", ["CASH (Physical Cash Box)", "BANK (UPI/NEFT/Cheque)"])
+        with adj_col3:
+            adj_party = st.text_input("Party Name", placeholder="e.g., Suresh Kumar (Customer)")
+            adj_remarks = st.text_input("Remarks / Bill Info", placeholder="e.g., Part settlement for Oct invoice")
+            
+        if st.button("Submit Cash Entry 💰", use_container_width=True):
+            clean_adj_mode = "CASH" if "CASH" in adj_mode else "BANK"
+            add_transaction(
+                item_name="N/A (Pure Cash Adjustment)",
+                action_type=cash_tx_type,
+                quantity=0,
+                rate=adj_amount,
+                margin_earned=0.0,
+                cost_details=adj_remarks if adj_remarks.strip() != "" else "Cash Account Cleared",
+                payment_status=clean_adj_mode,
+                party_details=adj_party
+            )
+            st.success("Cash balance updated and liabilities adjusted!")
+            st.rerun()
+
+# --- ADD VARIETY EXPANDER ---
+with st.expander("➕ Add Entirely New Tea Variety to Inventory", expanded=False):
+    add_col1, add_col2, add_col3, add_col4 = st.columns([1.5, 1, 1, 1])
+    with add_col1: new_item_name = st.text_input("Tea Variety Name")
+    with add_col2: new_item_stock = st.number_input("Opening Stock (KG)", min_value=0, value=0, step=50)
+    with add_col3: new_item_p_price = st.number_input("Initial Cost (₹/KG)", min_value=0.0, value=0.0, step=10.0)
+    with add_col4: new_item_s_price = st.number_input("Target Sale Rate (₹/KG)", min_value=0.0, value=0.0, step=10.0)
+    if st.button("Add Variety ✨", use_container_width=True):
+        if new_item_name.strip() != "" and new_item_name not in current_inventory:
+            batches = [{"qty": int(new_item_stock), "cost": float(new_item_p_price)}] if new_item_stock > 0 else []
+            current_inventory[new_item_name] = {"sale_price": new_item_s_price, "color": "#cbd5e1", "batches": batches}
+            save_inventory(current_inventory)
+            add_transaction(new_item_name, "INITIAL STOCK", new_item_stock, new_item_p_price, 0.0, "Opening Inventory", "CASH", "Opening Inventory")
+            st.session_state.inventory_data = current_inventory
+            st.rerun()
+
+# --- NO TABS BINDING: ITEM TILES MATRIX DISPLAY ---
+st.write("---")
+st.header("📦 Current Stock & Batch Breakdown Matrix")
+grid_col1, grid_col2 = st.columns(2)
+item_
