@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import gspread
 
 # --- MODERN THEME CONFIGURATION ---
 st.set_page_config(
@@ -26,27 +27,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- DIRECT GOOGLE SHEET CSV LINK FORMATTING ---
-# https://docs.google.com/spreadsheets/d/11rOF-i3498T3Jyz2SOlBt4oNDdBerGX0mRYPfqsyif8/edit?usp=sharing
-ORIGINAL_URL = "https://docs.google.com/spreadsheets/d/11rOF-i3498T3Jyz2SOlBt4oNDdBerGX0mRYPfqsyif8/edit?usp=sharing"
+# --- GOOGLE SHEET CONFIGURATION ---
+# 1. Paste your editable Google Sheet share link here inside the quotes
+SHEET_URL = "https://docs.google.com/spreadsheets/d/11rOF-i3498T3Jyz2SOlBt4oNDdBerGX0mRYPfqsyif8/edit?usp=sharing"
 
-if ORIGINAL_URL == "YOUR_GOOGLE_SHEET_SHARE_LINK_HERE":
-    st.error("⚠️ Setup Missing: Please paste your copied Google Sheets URL into line 30 of app.py!")
+if SHEET_URL == "YOUR_GOOGLE_SHEET_SHARE_LINK_HERE":
+    st.error("⚠️ Setup Missing: Please paste your copied Google Sheets URL into line 38 of app.py!")
     st.stop()
 
-# This trick automatically converts your sharing link into a direct download link that Pandas can read 100% of the time
+# Helper trick to extract sheet ID and convert to direct read format
 try:
-    if "/edit" in ORIGINAL_URL:
-        CSV_URL = ORIGINAL_URL.split("/edit")[0] + "/export?format=csv&gid=0"
-    else:
-        CSV_URL = ORIGINAL_URL
+    SHEET_ID = SHEET_URL.split("/d/")[1].split("/")[0]
+    CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 except Exception:
-    CSV_URL = ORIGINAL_URL
+    CSV_URL = SHEET_URL
 
-# Load live data directly
+# Function to read latest live data from your sheet
 def load_inventory():
     try:
-        # Clear cache and read fresh data straight from the link
         df = pd.read_csv(CSV_URL)
         inventory = {}
         for _, row in df.iterrows():
@@ -57,13 +55,33 @@ def load_inventory():
             }
         return inventory
     except Exception as e:
-        st.error(f"Could not connect to Google Sheets. Verify your link structure. Error: {e}")
-        return {
-            "Assam CTC Tea": {"stock": 1250, "price": 240, "color": "#bef264"},
-            "Darjeeling": {"stock": 250, "price": 650, "color": "#86efac"}
-        }
+        st.error(f"Error loading sheet data: {e}")
+        return {}
 
-# Save local updates back into application session
+# NEW SAVING FUNCTION: Direct-pushed synchronization back to Google Sheet
+def save_inventory_to_gsheet(updated_inventory):
+    try:
+        # Connect anonymously to the public editable sheet link
+        gc = gspread.public()
+        sh = gc.open_by_url(SHEET_URL)
+        worksheet = sh.worksheet("Stock")
+        
+        # Clear the old data row list
+        worksheet.clear()
+        
+        # Build fresh updated dataset matrix rows
+        headers = ["item_name", "stock", "price", "color"]
+        all_rows = [headers]
+        
+        for name, details in updated_inventory.items():
+            all_rows.append([name, details["stock"], details["price"], details["color"]])
+            
+        # Write everything into the live Google Sheet in one shot
+        worksheet.update('A1', all_rows)
+    except Exception as e:
+        st.error(f"⚠️ App couldn't sync data to Google Sheets. Make sure the sheet link permission is set to 'Editor'. Details: {e}")
+
+# Load or retain cache inventory data state
 if "inventory_data" not in st.session_state:
     st.session_state.inventory_data = load_inventory()
 
@@ -102,8 +120,9 @@ with st.expander("➕ Add New Tea Variety to Inventory", expanded=False):
     if st.button("Add to Dashboard ✨", use_container_width=True):
         if new_item_name.strip() != "" and new_item_name not in current_inventory:
             current_inventory[new_item_name] = {"stock": new_item_stock, "price": new_item_price, "color": "#cbd5e1"}
+            save_inventory_to_gsheet(current_inventory)
             st.session_state.inventory_data = current_inventory
-            st.success(f"Added {new_item_name} locally!")
+            st.success(f"Added and saved {new_item_name}!")
             st.rerun()
 
 # --- 2-COLUMN PREMIUM GRID ---
@@ -129,6 +148,7 @@ for item_name in list(current_inventory.keys()):
             with card_head_col2:
                 if st.button("🗑️", key=f"del_{item_name}", use_container_width=True):
                     del current_inventory[item_name]
+                    save_inventory_to_gsheet(current_inventory)
                     st.session_state.inventory_data = current_inventory
                     st.rerun()
             
@@ -158,6 +178,7 @@ for item_name in list(current_inventory.keys()):
                 if st.button("Save ✅", key=f"save_all_{item_name}", use_container_width=True):
                     current_inventory[item_name]["stock"] = new_qty
                     current_inventory[item_name]["price"] = new_price
+                    save_inventory_to_gsheet(current_inventory)
                     st.session_state.inventory_data = current_inventory
-                    st.success("Saved!")
+                    st.success("Saved to Sheet!")
                     st.rerun()
