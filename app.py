@@ -28,7 +28,7 @@ st.markdown("""
 
 # --- DIRECT GOOGLE SHEET CSV LINK FORMATTING ---
 # https://docs.google.com/spreadsheets/d/11rOF-i3498T3Jyz2SOlBt4oNDdBerGX0mRYPfqsyif8/edit?usp=sharing
-ORIGINAL_URL = "YOUR_GOOGLE_SHEET_SHARE_LINK_HERE"
+ORIGINAL_URL = "https://docs.google.com/spreadsheets/d/11rOF-i3498T3Jyz2SOlBt4oNDdBerGX0mRYPfqsyif8/edit?usp=sharing"
 
 if ORIGINAL_URL == "YOUR_GOOGLE_SHEET_SHARE_LINK_HERE":
     st.error("⚠️ Setup Missing: Please paste your copied Google Sheets URL into line 30 of app.py!")
