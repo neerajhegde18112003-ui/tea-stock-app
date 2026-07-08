@@ -214,6 +214,6 @@ with tab1:
                 st.error(f"❌ Low Stock Alert! You only have {current_total_stock} KG left.")
             else:
                 if transaction_type == "PURCHASE (Stock In)":
-                    if "batches" not in item_data: item_data["batches"] = []
-                    item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
-                    cost_details_str = f"Added new batch @ ₹{tx_
+                if "batches" not in item_data: item_data["batches"] = []
+                item_data["batches"].append({"qty": int(tx_quantity), "cost": float(tx_rate)})
+                cost_details_str = f"Added new batch @ ₹{tx_rate}/KG"
