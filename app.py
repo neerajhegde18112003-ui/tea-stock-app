@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os, random, smtplib, pandas as pd
+import json, os, random, smtplib, glob, pandas as pd
 from email.mime.text import MIMEText
 from datetime import datetime
 
@@ -46,7 +46,38 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
+BACKUP_DIR = "backups"
 OWNER_EMAIL = "your-email@gmail.com" 
+
+# --- AUTOMATED BACKUP ENGINE ---
+def run_auto_backup():
+    """Runs a rolling, daily background backup to prevent data loss."""
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # 1. Backup transaction logs
+    if os.path.exists(LOG_FILE):
+        log_backup_path = os.path.join(BACKUP_DIR, f"tx_log_{today_str}.json")
+        if not os.path.exists(log_backup_path): # Only backup once a day to save space
+            with open(LOG_FILE, 'r') as src, open(log_backup_path, 'w') as dest:
+                dest.write(src.read())
+                
+    # 2. Backup stock inventory matrix
+    if os.path.exists(DATA_FILE):
+        stock_backup_path = os.path.join(BACKUP_DIR, f"stock_{today_str}.json")
+        if not os.path.exists(stock_backup_path):
+            with open(DATA_FILE, 'r') as src, open(stock_backup_path, 'w') as dest:
+                dest.write(src.read())
+
+    # 3. Rolling Cleanup: Keep only the 5 most recent days of backups
+    for prefix in ["tx_log_", "stock_"]:
+        files = sorted(glob.glob(os.path.join(BACKUP_DIR, f"{prefix}*.json")))
+        if len(files) > 5:
+            for old_file in files[:-5]: # Remove the oldest files leaving the top 5
+                try: os.remove(old_file)
+                except: pass
 
 def load_auth():
     return json.load(open(AUTH_FILE, "r")) if os.path.exists(AUTH_FILE) else {"password": "admin"}
@@ -82,6 +113,7 @@ def load_inventory():
 
 def save_inventory(inv):
     json.dump(inv, open(DATA_FILE, "w"), indent=4)
+    run_auto_backup() # Trigger background backup on change
 
 def load_transactions():
     return json.load(open(LOG_FILE, "r")) if os.path.exists(LOG_FILE) else []
@@ -98,6 +130,7 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
         "party": clean_party
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
+    run_auto_backup() # Trigger background backup on change
 
 def rebuild_inventory_and_metrics_from_scratch():
     fresh_inv = load_inventory()
@@ -162,6 +195,9 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
+# Run an initial check backup on bootup
+run_auto_backup()
+
 # --- PARTY-WISE LEDGER BALANCE CALCULATOR ---
 customer_credit_map = {}
 supplier_credit_map = {}
@@ -173,19 +209,16 @@ for tx in reversed(transactions_history):
     tamt = float(tx.get("total_amount (₹)", 0.0))
     pstatus = tx.get("payment_status", "")
     
-    # Track Customer Receivables
     if ttype == "SALE (Stock Out)" and pstatus == "CREDIT":
         customer_credit_map[pty] = customer_credit_map.get(pty, 0.0) + tamt
     elif ttype == "CUSTOMER PAYMENT (Money Received)":
         customer_credit_map[pty] = customer_credit_map.get(pty, 0.0) - tamt
         
-    # Track Supplier Payables
     if ttype == "PURCHASE (Stock In)" and pstatus == "CREDIT":
         supplier_credit_map[pty] = supplier_credit_map.get(pty, 0.0) + tamt
     elif ttype == "SUPPLIER PAYMENT (Money Paid)":
         supplier_credit_map[pty] = supplier_credit_map.get(pty, 0.0) - tamt
 
-# Filter out completely cleared balances to keep lists sharp
 active_debtors = {k: v for k, v in customer_credit_map.items() if v > 0.01}
 active_creditors = {k: v for k, v in supplier_credit_map.items() if v > 0.01}
 
@@ -209,6 +242,17 @@ bank_flow = b_in - b_out
 with st.sidebar:
     st.header("⚙️ Settings")
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
+    
+    # NEW SIDEBAR VISUAL: Display active background backups
+    with st.expander("💾 System Backup Manager", expanded=False):
+        st.write("📁 **Storage Location:** `/backups`")
+        found_backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
+        if found_backups:
+            st.success(f"Active Rolling Backups: **{len(found_backups)} Days Saved**")
+            for f_path in reversed(found_backups):
+                st.write(f"• {os.path.basename(f_path).replace('tx_log_', '').replace('.json', '')}")
+        else:
+            st.write("*No archive files found yet.*")
     
     with st.expander("🚨 Master System Reset", expanded=False):
         st.warning("This completely deletes all history and resets stock to 0.")
@@ -345,7 +389,6 @@ with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment (Clear Dues)**"
     with a_c2:
         adj_mode = st.selectbox("Account Channel", ["CASH", "BANK"])
         
-        # SMART DROP-DOWN SWITCH: Dynamically display accounts that actually have dues matching the selected direction
         if c_tx_type == "CUSTOMER PAYMENT (Money Received)":
             party_options = list(active_debtors.keys())
             if party_options:
@@ -477,9 +520,7 @@ if transactions_history:
         else:
             filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
 
-    # FEATURE addition: Clean Table Download Option
     if filtered_txs:
-        # Construct Pandas DataFrame for Download
         download_data = []
         for t in filtered_txs:
             download_data.append({
@@ -555,7 +596,6 @@ if transactions_history:
                     st.success("Record voided cleanly!")
                     st.rerun()
                     
-    # UI List-style rendering with color-coded badges and rule-based amount styling
     st.write("### 📱 Mobile-Scannable Ledger List")
     display_list = filtered_txs if filtered_txs else transactions_history
     
@@ -564,10 +604,6 @@ if transactions_history:
         mode = tx.get("payment_status", "CASH")
         amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
         
-        # Determine Color Logic according to requested criteria:
-        # Credit -> Blue
-        # Cash/Bank Out -> Red
-        # Cash/Bank In -> Green
         if mode == "CREDIT":
             badge = '<span class="badge-credit">⏳ CREDIT</span>'
             amt_display = f"<span style='color:#2563eb; font-weight:bold; font-size:1.1rem;'>{amt_formatted}</span>"
@@ -578,7 +614,7 @@ if transactions_history:
             elif type_str == "PURCHASE (Stock In)" or type_str == "SUPPLIER PAYMENT (Money Paid)":
                 badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬇️ {mode} OUT</span>'
                 amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
-            else: # SALE (Stock Out) or CUSTOMER PAYMENT (Money Received)
+            else:
                 badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬆️ {mode} IN</span>'
                 amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
         
