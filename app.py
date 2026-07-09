@@ -6,6 +6,7 @@ from datetime import datetime
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
 
+# Enhanced UI Styling for Compact Mobile Operations
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
@@ -19,20 +20,28 @@ st.markdown("""<style>
         width: 100% !important;
     }
     
+    /* Mobile optimization rules for tight spacing */
     @media (max-width: 768px) {
         .clean-login-card { margin-top: 15vh !important; }
         [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
-        [data-testid="stHorizontalBlock"] > div { min-width: 160px !important; flex: 1 1 auto !important; }
-        .matrix-grid { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
-        .matrix-grid > div { flex: 1 1 calc(50% - 10px) !important; min-width: 150px !important; }
+        [data-testid="stHorizontalBlock"] > div { min-width: 140px !important; flex: 1 1 auto !important; padding: 4px !important; }
+        .stMetric { padding: 8px !important; }
     }
+    
+    /* Clean grid cards for metrics */
     [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div > div > div > div {
-        border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
-        background-color: white; padding: 18px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
+        border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        background-color: white; padding: 14px !important; border: 1px solid #e2e8f0; margin-bottom: 8px;
     }
-    h1 { font-size: 2.2rem !important; color: #166534; font-weight: 700; text-align: center; }
-    h2 { font-size: 1.4rem !important; color: #1e293b; font-weight: 600; margin: 1rem 0 0.5rem 0 !important;}
-    h3 { font-size: 1.25rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
+    
+    h1 { font-size: 1.8rem !important; color: #166534; font-weight: 700; text-align: center; margin-bottom: 0.5rem !important; }
+    h2 { font-size: 1.2rem !important; color: #1e293b; font-weight: 600; margin: 0.8rem 0 0.4rem 0 !important;}
+    h3 { font-size: 1.1rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
+    
+    /* Color Badges for Fast Scanning */
+    .badge-cash { background-color: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
+    .badge-bank { background-color: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
+    .badge-credit { background-color: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
@@ -125,7 +134,7 @@ def rebuild_inventory_and_metrics_from_scratch():
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
     st.session_state.inventory_data = fresh_inv
 
-# --- FIX: ROBUST STATEFUL SECURITY ENGINE ---
+# --- SECURITY ENGINE ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: 
     st.session_state.logged_in = False
@@ -134,11 +143,10 @@ if not st.session_state.logged_in:
     _, center_col, _ = st.columns([1, 1.4, 1])
     with center_col:
         st.markdown('<div class="clean-login-card">', unsafe_allow_html=True)
-        st.markdown("<h1 style='margin-bottom:24px; font-size:1.9rem !important;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
+        st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
         input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
         login_btn = st.button("Login 🔓", use_container_width=True)
         
-        # Explicit validation check locked to session memory state
         if login_btn or (input_pwd != "" and input_pwd == auth_data["password"]):
             if input_pwd == auth_data["password"]:
                 st.session_state.logged_in = True
@@ -148,7 +156,6 @@ if not st.session_state.logged_in:
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- CONTINUOUS SESSION RENDER ---
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
@@ -177,7 +184,7 @@ with st.sidebar:
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
     with st.expander("🚨 Master System Reset", expanded=False):
-        st.warning("This completely deletes all sales history logs and sets all stock values back to 0.")
+        st.warning("This completely deletes all history and resets stock to 0.")
         confirm_text = st.text_input("Type 'RESET' to authorize:")
         if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
@@ -210,94 +217,87 @@ with st.sidebar:
 
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-st.header("📊 Financial Overview")
+
+# Compact Summary Row (Scrolls horizontally natively on narrow phones)
 with st.container():
-    t_c1, t_c2, t_c3, t_c4 = st.columns(4)
+    t_c1, t_c2, t_c3, t_c4, t_c5, t_c6 = st.columns(6)
     tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
-    with t_c1: st.metric("Total Stock Balance", f"{tot_stk:,} KG")
-    with t_c2: st.metric("Total Profit 💰", f"₹{round(prof, 2):,}")
+    with t_c1: st.metric("Stock Balance", f"{tot_stk:,} KG")
+    with t_c2: st.metric("Profit 💰", f"₹{round(prof, 2):,}")
     with t_c3: st.metric("Receivables 📈", f"₹{round(receivables, 2):,}")
     with t_c4: st.metric("Payables 📉", f"₹{round(payables, 2):,}")
-
-with st.container():
-    f_c1, f_c2 = st.columns(2)
-    with f_c1: st.metric("Cash Box Counter 💵", f"₹{round(cash_flow, 2):,}")
-    with f_c2: st.metric("Bank Position 🏦", f"₹{round(bank_flow, 2):,}")
+    with t_c5: st.metric("Cash Box 💵", f"₹{round(cash_flow, 2):,}")
+    with t_c6: st.metric("Bank Position 🏦", f"₹{round(bank_flow, 2):,}")
 
 st.write("---")
-tab1, tab2 = st.tabs(["📝 Log Goods Transaction", "💰 Log Cash Payment"])
 
-with tab1:
-    st.subheader("Tea Stock Actions")
+# UPGRADE: Drawers (Expanders) to clear up vertical height on smartphones
+with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", expanded=False):
     if list(current_inventory.keys()):
-        with st.container():
-            x_c1, x_c2, x_c3, x_c4 = st.columns([1.5, 1, 1, 1.5])
-            with x_c1: sel_item = st.selectbox("Tea Variety", list(current_inventory.keys()))
-            with x_c2: tx_type = st.radio("Action", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
-            with x_c3: tx_qty = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
-            
+        x_c1, x_c2, x_c3 = st.columns(3)
+        with x_c1: 
+            sel_item = st.selectbox("Tea Variety", list(current_inventory.keys()))
+            tx_type = st.radio("Action Type", ["PURCHASE (Stock In)", "SALE (Stock Out)"], horizontal=True)
+        with x_c2:
+            tx_qty = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
             b_list = current_inventory[sel_item].get("batches", [])
             tot_item_stk = sum(b["qty"] for b in b_list)
             lat_cost = b_list[-1]["cost"] if b_list else 0.0
             def_rate = lat_cost if tx_type == "PURCHASE (Stock In)" else current_inventory[sel_item]["sale_price"]
+            tx_rate = st.number_input("Rate (₹/KG)", min_value=0.0, value=float(def_rate), step=5.0)
+        with x_c3:
+            p_mode = st.selectbox("Payment Mode Options", ["CASH", "BANK", "CREDIT"])
+            p_info = st.text_input("Party Business Name")
             
-            with x_c4:
-                tx_rate = st.number_input("Rate (₹/KG)", min_value=0.0, value=float(def_rate), step=5.0)
-                p_mode = st.selectbox("Payment Mode", ["CASH", "BANK", "CREDIT"])
-                p_info = st.text_input("Party Name")
-                
-            if st.button("Submit Stock Entry ⚡", use_container_width=True):
-                it_data = current_inventory[sel_item]
-                margin, details = 0.0, ""
-                if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
-                    st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
+        if st.button("Submit Stock Entry ⚡", use_container_width=True):
+            it_data = current_inventory[sel_item]
+            margin, details = 0.0, ""
+            if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
+                st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
+            else:
+                if tx_type == "PURCHASE (Stock In)":
+                    if "batches" not in it_data: it_data["batches"] = []
+                    it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
+                    details = f"Added @ ₹{tx_rate}/KG"
                 else:
-                    if tx_type == "PURCHASE (Stock In)":
-                        if "batches" not in it_data: it_data["batches"] = []
-                        it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
-                        details = f"Added @ ₹{tx_rate}/KG"
-                    else:
-                        rem, cost_bk = int(tx_qty), []
-                        while rem > 0 and it_data["batches"]:
-                            old_b = it_data["batches"][0]
-                            qty_t = min(old_b["qty"], rem)
-                            margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
-                            cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
-                            old_b["qty"] -= qty_t
-                            rem -= qty_t
-                            if old_b["qty"] == 0: it_data["batches"].pop(0)
-                        details = ", ".join(cost_bk)
-                    save_inventory(current_inventory)
-                    add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
-                    st.session_state.inventory_data = current_inventory
-                    st.success("Logged successfully!")
-                    st.rerun()
+                    rem, cost_bk = int(tx_qty), []
+                    while rem > 0 and it_data["batches"]:
+                        old_b = it_data["batches"][0]
+                        qty_t = min(old_b["qty"], rem)
+                        margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
+                        cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
+                        old_b["qty"] -= qty_t
+                        rem -= qty_t
+                        if old_b["qty"] == 0: it_data["batches"].pop(0)
+                    details = ", ".join(cost_bk)
+                save_inventory(current_inventory)
+                add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
+                st.session_state.inventory_data = current_inventory
+                st.success("Logged successfully!")
+                st.rerun()
     else: st.info("Please add a tea variety first.")
 
-with tab2:
-    st.subheader("Pure Cash Ledger Adjustments")
-    with st.container():
-        a_c1, a_c2, a_c3 = st.columns(3)
-        with a_c1: c_tx_type = st.radio("Direction", ["CUSTOMER PAYMENT (Money Received)", "SUPPLIER PAYMENT (Money Paid)"])
-        with a_c2:
-            adj_amt = st.number_input("Amount (₹)", min_value=1.0, value=5000.0)
-            adj_mode = st.selectbox("Channel", ["CASH", "BANK"])
-        with a_c3:
-            adj_party = st.text_input("Party")
-            adj_rem = st.text_input("Remarks")
-        if st.button("Submit Cash Entry 💰", use_container_width=True):
-            add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared", adj_mode, adj_party)
-            st.success("Cash Entry Saved!")
-            st.rerun()
+with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment**", expanded=False):
+    a_c1, a_c2 = st.columns(2)
+    with a_c1: 
+        c_tx_type = st.radio("Direction Mode", ["CUSTOMER PAYMENT (Money Received)", "SUPPLIER PAYMENT (Money Paid)"])
+        adj_amt = st.number_input("Amount Balance (₹)", min_value=1.0, value=5000.0)
+    with a_c2:
+        adj_mode = st.selectbox("Account Channel", ["CASH", "BANK"])
+        adj_party = st.text_input("Party Context Name")
+        adj_rem = st.text_input("Remarks Summary")
+    if st.button("Submit Cash Entry 💰", use_container_width=True):
+        add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared", adj_mode, adj_party)
+        st.success("Cash Entry Saved!")
+        st.rerun()
 
-# --- ADD VARIETY EXPANDER ---
-with st.expander("Add New Variety"):
-    v_name = st.text_input("Variety Name")
-    v_stk = st.number_input("Opening Stock (KG)", min_value=0, value=0)
-    v_cost = st.number_input("Cost (₹/KG)", min_value=0.0, value=0.0)
-    v_sale = st.number_input("Sale Rate (₹/KG)", min_value=0.0, value=0.0)
-    v_alert = st.number_input("Low Stock Warning Alert Level (KG)", min_value=0, value=100)
-    if st.button("Add ✨", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
+with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
+    v_name = st.text_input("Variety Label Name")
+    v_stk = st.number_input("Opening Stock (KG Value)", min_value=0, value=0)
+    v_cost = st.number_input("Cost (₹/KG Base)", min_value=0.0, value=0.0)
+    v_sale = st.number_input("Target Sale Rate (₹/KG)", min_value=0.0, value=0.0)
+    v_alert = st.number_input("Low Stock Warning Alert Trigger (KG)", min_value=0, value=100)
+    if st.button("Add New Product to Catalog", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
         save_inventory(current_inventory)
@@ -307,7 +307,7 @@ with st.expander("Add New Variety"):
 
 # --- STOCK TILES DISPLAY MATRIX ---
 st.write("---")
-st.header("📦 Current Stock & Batch Breakdown Matrix")
+st.header("📦 Live Stock Balance Matrix")
 if current_inventory:
     g_col1, g_col2 = st.columns(2)
     idx = 0
@@ -321,7 +321,7 @@ if current_inventory:
             idx += 1
             with st.container(border=True):
                 if tot_stk <= limit:
-                    st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
+                    st.markdown(f"### {name} <span style='color:#ef4444; font-size:0.8rem; font-weight:bold; border:1px solid #fca5a5; padding:2px 6px; border-radius:4px; background-color:#fef2f2;'>⚠️ LOW STOCK</span>", unsafe_allow_html=True)
                 else: st.markdown(f"### {name}")
                     
                 if not b_list: st.write("*Out of Stock*")
@@ -330,29 +330,27 @@ if current_inventory:
                         st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
                 st.write("---")
                 m1, m2 = st.columns(2)
-                with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
-                with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
+                with m1: st.metric("Available Stock", f"{tot_stk:,} KG")
+                with m2: st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
-                e_col1, e_col2 = st.columns(2)
-                with e_col1: new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
-                with e_col2: new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
-                    
-                if new_s != dt.get('sale_price', 0.0) or new_l != limit:
-                    current_inventory[name]["sale_price"] = new_s
-                    current_inventory[name]["low_stock_limit"] = new_l
-                    save_inventory(current_inventory)
-                    st.session_state.inventory_data = current_inventory
-                    st.rerun()
+                with st.expander("⚙️ Edit Settings", expanded=False):
+                    new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
+                    new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                    if new_s != dt.get('sale_price', 0.0) or new_l != limit:
+                        current_inventory[name]["sale_price"] = new_s
+                        current_inventory[name]["low_stock_limit"] = new_l
+                        save_inventory(current_inventory)
+                        st.session_state.inventory_data = current_inventory
+                        st.rerun()
 else: st.info("No stock tiles to show.")
 
 # --- TRANSACTION HISTORY LOG + DYNAMIC IN-LINE EDITING ENGINE ---
 st.write("---")
-st.header("📜 Recent Transactions History Log")
+st.header("📜 Recent Transactions Log")
 if transactions_history:
-    st.markdown("### 🔍 Filter, Locate & Edit Records")
     fl_c1, fl_c2 = st.columns(2)
-    with fl_c1: search_party = st.text_input("Search by Party Name (Customer/Supplier):", value="")
-    with fl_c2: search_item = st.selectbox("Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
+    with fl_c1: search_party = st.text_input("🔎 Search by Party Name:", value="")
+    with fl_c2: search_item = st.selectbox("🎯 Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
 
     filtered_txs = transactions_history
     if search_party.strip():
@@ -367,24 +365,20 @@ if transactions_history:
             lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
             tx_options.append((t_id, lbl))
             
-        st.write("🔧 **Selected Active Transaction Editor Context:**")
-        sel_tx_id = st.selectbox("Pick an entry to modify or delete:", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
-        
-        target_tx = next(x for x in transactions_history if x.get("id", "legacy") == sel_tx_id)
-        
-        with st.container(border=True):
-            st.markdown(f"#### 📝 Editing Mode: Transaction ID `#{target_tx.get('id')}`")
-            ed_col1, ed_col2, ed_col3, ed_col4 = st.columns(4)
+        with st.expander("🔧 **Tap to Open Live Transaction Editor Panel**", expanded=False):
+            sel_tx_id = st.selectbox("Pick an entry to modify or delete:", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
+            target_tx = next(x for x in transactions_history if x.get("id", "legacy") == sel_tx_id)
+            
+            st.markdown(f"#### 📝 Modifying Transaction ID `#{target_tx.get('id')}`")
+            ed_col1, ed_col2 = st.columns(2)
             with ed_col1:
                 new_party = st.text_input("Edit Party Name", value=target_tx.get("party"))
-            with ed_col2:
                 new_pmode = st.selectbox("Edit Payment Mode", ["CASH", "BANK", "CREDIT"], index=["CASH", "BANK", "CREDIT"].index(target_tx.get("payment_status", "CASH")))
-            with ed_col3:
+            with ed_col2:
                 new_qty = st.number_input("Modify Quantity (KG)", min_value=0, value=int(target_tx.get("quantity", 0)))
-            with ed_col4:
                 new_rate = st.number_input("Modify Rate (₹/KG)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
                 
-            btn_save, btn_void, _ = st.columns([1, 1, 2])
+            btn_save, btn_void = st.columns(2)
             with btn_save:
                 if st.button("Save & Recalculate Ledger ✅", use_container_width=True):
                     target_tx["party"] = new_party
@@ -398,23 +392,46 @@ if transactions_history:
                     st.success("Changes saved! Live financial metrics updated.")
                     st.rerun()
             with btn_void:
-                if st.button("Void / Erase This Record Completely ❌", use_container_width=True):
+                if st.button("Void / Erase Record ❌", use_container_width=True):
                     transactions_history = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
                     json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
                     st.success("Record voided cleanly!")
                     st.rerun()
-    else:
-        st.warning("No transactions match your current search filters.")
-        
-    st.write("### Live Data Viewer")
+                    
+    # UPGRADE: UI List-style rendering with color-coded HTML badges for mobile viewing
+    st.write("### 📱 Mobile-Scannable Ledger List")
     display_list = filtered_txs if filtered_txs else transactions_history
-    df = pd.DataFrame(display_list).rename(columns={
-        "date": "Date & Time", "item_name": "Item Variety", "type": "Transaction Type",
-        "quantity": "Quantity (KG)", "rate (₹)": "Rate (₹/KG)", "total_amount (₹)": "Total Value (₹)",
-        "net_profit_realized (₹)": "Profit Earned (₹)", "cost_used_details": "Batch / Remarks Info",
-        "payment_status": "Mode", "party": "Party Name"
-    })
-    st.dataframe(df[["Date & Time", "Item Variety", "Transaction Type", "Party Name", "Quantity (KG)", "Rate (₹/KG)", "Total Value (₹)", "Mode", "Profit Earned (₹)", "Batch / Remarks Info"]], use_container_width=True, hide_index=True)
+    
+    for tx in display_list[:25]: # Show recent 25 items for loading speed
+        mode = tx.get("payment_status", "CASH")
+        if mode == "CASH": badge = '<span class="badge-cash">💵 CASH</span>'
+        elif mode == "BANK": badge = '<span class="badge-bank">🏦 BANK</span>'
+        else: badge = '<span class="badge-credit">⏳ CREDIT</span>'
+        
+        type_str = tx.get("type", "")
+        amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
+        
+        # Determine green/red highlight text based on transaction direction
+        if "SALE" in type_str or "RECEIVED" in type_str:
+            amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
+        else:
+            amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
+            
+        qty_info = f" • {tx.get('quantity')} KG" if tx.get('quantity', 0) > 0 else ""
+        
+        st.markdown(f"""
+        <div style="background-color: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-weight: 600; color: #1e293b; font-size:0.95rem;">{tx.get('party')}</div>
+                <div style="font-size: 0.8rem; color: #64748b;">{tx.get('date')} • {tx.get('item_name')}{qty_info}</div>
+                <div style="margin-top: 4px;">{badge} <span style="font-size: 0.8rem; color: #475569; margin-left: 6px;">{type_str}</span></div>
+            </div>
+            <div style="text-align: right;">
+                {amt_display}
+                <div style="font-size: 0.75rem; color: #94a3b8;">ID: #{tx.get('id')}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 else:
     st.info("No transactions logged yet.")
