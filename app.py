@@ -80,6 +80,7 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
     amt = int(qty) * float(rate) if qty > 0 else float(rate)
     txs.insert(0, {
+        "id": str(random.randint(100000, 999999)), # Added explicit ID tracking for targeting deletions
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "item_name": item, "type": t_type,
         "quantity": int(qty), "rate (₹)": float(rate) if qty > 0 else 0.0, "total_amount (₹)": amt,
         "net_profit_realized (₹)": float(margin), "cost_used_details": cost_info, "payment_status": status,
@@ -307,7 +308,6 @@ if current_inventory:
                     st.session_state.inventory_data = current_inventory
                     st.rerun()
                 
-                # --- NEW SAFE UTILITY: DELETE LOOPHOLE CLOSER ---
                 with st.expander("🗑️ Delete Variety"):
                     if tot_stk > 0:
                         st.error("Cannot delete variety with active stock. Sell or clear out inventory first.")
@@ -317,17 +317,34 @@ if current_inventory:
                         if st.button("Permanently Delete Tile ❌", key=f"del_btn_{name}", use_container_width=True, disabled=not confirm_del):
                             del current_inventory[name]
                             save_inventory(current_inventory)
-                            add_transaction(name, "DELETED VARIETY", 0, 0, 0, "Variety Removed from Matrix", "N/A", "N/A")
                             st.session_state.inventory_data = current_inventory
                             st.success(f"Successfully deleted {name}!")
                             st.rerun()
 else:
     st.info("No stock tiles to show. Add a variety above.")
 
-# --- RECENT LEDGER HISTORY LOG ---
+# --- RECENT LEDGER HISTORY LOG + NEW VOID ACTION PANEL ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
 if transactions_history:
+    # Render an interactive row control utility directly underneath the data frame
+    st.write("💡 *Spotted a typo? Select any entry below to void it and recalculate the dashboard instantly:*")
+    
+    # Formulate short display options for the rollback picker dropdown
+    tx_options = []
+    for t in transactions_history:
+        lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
+        tx_options.append((t.get("id"), lbl))
+        
+    sel_tx_id = st.selectbox("Select Transaction to Void 🗑️", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
+    
+    if st.button("Void & Erase Selected Transaction ❌", use_container_width=True):
+        updated_txs = [x for x in transactions_history if x.get("id") != sel_tx_id]
+        json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
+        st.success("Transaction erased! Dashboard financial metrics recalibrated.")
+        st.rerun()
+        
+    st.write("### Data Viewer")
     df = pd.DataFrame(transactions_history).rename(columns={
         "date": "Date & Time", "item_name": "Item Variety", "type": "Transaction Type",
         "quantity": "Quantity (KG)", "rate (₹)": "Rate (₹/KG)", "total_amount (₹)": "Total Value (₹)",
