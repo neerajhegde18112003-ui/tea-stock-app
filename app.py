@@ -10,6 +10,14 @@ st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide"
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
+    /* Center the login box flawlessly on both Desktop and Mobile viewports */
+    .login-wrapper {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding-top: 8%;
+    }
+    
     /* Force 2-column or multi-column grids to stay side-by-side even on mobile screens */
     @media (max-width: 768px) {
         [data-testid="stHorizontalBlock"] {
@@ -73,7 +81,7 @@ def load_inventory():
                 stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
                 d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
             if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
-            if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100  # Default fallback threshold
+            if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100
         return d
     return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
@@ -94,19 +102,26 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- LOGIN ---
+# --- DIRECT SMOOTH LOGIN EXECUTION ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.2, 1])
+    st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 1.3, 1])
     with col:
         with st.container(border=True):
-            if st.text_input("Admin Password", type="password") == auth_data["password"]:
-                if st.button("Login 🔓", use_container_width=True):
-                    st.session_state.logged_in = True
-                    st.rerun()
+            input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
+            login_btn = st.button("Login 🔓", use_container_width=True)
+            
+            # Instantly unlock if they hit enter inside the field OR press the login button
+            if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
+                st.session_state.logged_in = True
+                st.rerun()
+            elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
+                st.error("❌ Incorrect Admin Password Entry")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
@@ -140,14 +155,10 @@ with st.sidebar:
         confirm_text = st.text_input("Type 'RESET' to authorize clearing database:")
         if st.button("WIPE LEDGER & STOCKS NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
-                # Clear structural tracking files completely
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
-                
-                # Zero out current active memory dictionary items
                 for k in current_inventory:
                     current_inventory[k]["batches"] = []
                 save_inventory(current_inventory)
-                
                 st.session_state.inventory_data = current_inventory
                 st.success("System completely wiped to 0 values!")
                 st.rerun()
@@ -282,7 +293,6 @@ for name in list(current_inventory.keys()):
     with (g_col1 if idx % 2 == 0 else g_col2):
         idx += 1
         with st.container(border=True):
-            # Dynamic low-stock warning label display inside the individual product card
             if tot_stk <= limit:
                 st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
             else:
@@ -297,7 +307,6 @@ for name in list(current_inventory.keys()):
             with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
             with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
             
-            # Interactive fields to edit item-specific settings in real time
             e_col1, e_col2 = st.columns(2)
             with e_col1:
                 new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
