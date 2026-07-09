@@ -9,23 +9,19 @@ st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide"
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
-    /* Absolute overlay positioning to force perfect center on mobile and desktop viewports */
-    .mobile-login-center-card {
-        position: fixed !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
-        width: 90% !important;
-        max-width: 380px !important;
+    /* Clean, reliable flex card layout that shifts dynamically across form factors */
+    .clean-login-card {
         background-color: white !important;
-        padding: 24px !important;
+        padding: 28px !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 12px !important;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
-        z-index: 999999 !important;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03) !important;
+        margin-top: 22vh !important; /* Balanced vertical offset across form factors */
+        width: 100% !important;
     }
     
     @media (max-width: 768px) {
+        .clean-login-card { margin-top: 15vh !important; }
         [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
         [data-testid="stHorizontalBlock"] > div { min-width: 160px !important; flex: 1 1 auto !important; }
         .matrix-grid { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
@@ -92,25 +88,28 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- DIRECT INJECTION PERFECT CENTERING INTERFACE ---
+# --- CLEAN NATIVE SIDEBAR & GRID LOGIN ALIGNMENT ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    # Build clean HTML card wrapper using the fixed styling classes
-    st.markdown('<div class="mobile-login-center-card">', unsafe_allow_html=True)
-    st.markdown("<h1 style='margin-bottom:20px;'>🍃 NAGBARI</h1>", unsafe_allow_html=True)
+    # Use standard Streamlit columns to center the layout perfectly without breaks
+    _, center_col, _ = st.columns([1, 1.4, 1])
     
-    input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input", label_visibility="visible")
-    login_btn = st.button("Login 🔓", use_container_width=True)
-    
-    if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
-        st.session_state.logged_in = True
-        st.rerun()
-    elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
-        st.error("❌ Incorrect Entry")
+    with center_col:
+        st.markdown('<div class="clean-login-card">', unsafe_allow_html=True)
+        st.markdown("<h1 style='margin-bottom:24px; font-size:1.9rem !important;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
         
-    st.markdown('</div>', unsafe_allow_html=True)
+        input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
+        login_btn = st.button("Login 🔓", use_container_width=True)
+        
+        if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
+            st.session_state.logged_in = True
+            st.rerun()
+        elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
+            st.error("❌ Incorrect Password Entry")
+            
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
