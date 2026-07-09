@@ -17,7 +17,7 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
-OWNER_EMAIL = "neerajhegde547@gmail.com" 
+OWNER_EMAIL = "your-email@gmail.com" 
 
 def load_auth():
     return json.load(open(AUTH_FILE, "r")) if os.path.exists(AUTH_FILE) else {"password": "admin"}
@@ -170,94 +170,4 @@ with tab1:
                 st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
             else:
                 if tx_type == "PURCHASE (Stock In)":
-                    if "batches" not in it_data: it_data["batches"] = []
-                    it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
-                    details = f"Added @ ₹{tx_rate}/KG"
-                else:
-                    rem, cost_bk = int(tx_qty), []
-                    while rem > 0 and it_data["batches"]:
-                        old_b = it_data["batches"][0]
-                        qty_t = min(old_b["qty"], rem)
-                        margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
-                        cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
-                        old_b["qty"] -= qty_t
-                        rem -= qty_t
-                        if old_b["qty"] == 0: it_data["batches"].pop(0)
-                    details = ", ".join(cost_bk)
-                save_inventory(current_inventory)
-                add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
-                st.session_state.inventory_data = current_inventory
-                st.success("Logged successfully!")
-                st.rerun()
-
-with tab2:
-    st.subheader("Pure Cash Ledger Adjustments")
-    with st.container():
-        a_c1, a_c2, a_c3 = st.columns(3)
-        with a_c1: c_tx_type = st.radio("Direction", ["CUSTOMER PAYMENT (Money Received)", "SUPPLIER PAYMENT (Money Paid)"])
-        with a_c2:
-            adj_amt = st.number_input("Amount (₹)", min_value=1.0, value=5000.0)
-            adj_mode = st.selectbox("Channel", ["CASH", "BANK"])
-        with a_c3:
-            adj_party = st.text_input("Party")
-            adj_rem = st.text_input("Remarks")
-        if st.button("Submit Cash Entry 💰", use_container_width=True):
-            add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared", adj_mode, adj_party)
-            st.success("Cash Entry Saved!")
-            st.rerun()
-
-# --- ADD VARIETY EXPANDER ---
-with st.expander("Add New Variety"):
-    v_name = st.text_input("Variety Name")
-    v_stk = st.number_input("Opening Stock (KG)", min_value=0, value=0)
-    v_cost = st.number_input("Cost (₹/KG)", min_value=0.0, value=0.0)
-    v_sale = st.number_input("Sale Rate (₹/KG)", min_value=0.0, value=0.0)
-    if st.button("Add ✨", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
-        batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
-        current_inventory[v_name] = {"sale_price": v_sale, "batches": batches}
-        save_inventory(current_inventory)
-        add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening", "CASH", "Opening")
-        st.session_state.inventory_data = current_inventory
-        st.rerun()
-
-# --- STOCK TILES DISPLAY ---
-st.write("---")
-st.header("📦 Current Stock & Batch Breakdown Matrix")
-g_col1, g_col2 = st.columns(2)
-idx = 0
-for name in list(current_inventory.keys()):
-    dt = current_inventory[name]
-    b_list = dt.get("batches", [])
-    tot_stk = sum(b["qty"] for b in b_list)
-    with (g_col1 if idx % 2 == 0 else g_col2):
-        idx += 1
-        with st.container(border=True):
-            st.markdown(f"### {name}")
-            if not b_list: st.write("*Out of Stock*")
-            else:
-                for i, b in enumerate(b_list):
-                    st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
-            st.write("---")
-            m1, m2 = st.columns(2)
-            with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
-            with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
-            new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
-            if new_s != dt.get('sale_price', 0.0):
-                current_inventory[name]["sale_price"] = new_s
-                save_inventory(current_inventory)
-                st.session_state.inventory_data = current_inventory
-                st.rerun()
-
-# --- RECENT LEDGER HISTORY LOG ---
-st.write("---")
-st.header("📜 Recent Transactions History Log")
-if transactions_history:
-    df = pd.DataFrame(transactions_history).rename(columns={
-        "date": "Date & Time", "item_name": "Item Variety", "type": "Transaction Type",
-        "quantity": "Quantity (KG)", "rate (₹)": "Rate (₹/KG)", "total_amount (₹)": "Total Value (₹)",
-        "net_profit_realized (₹)": "Profit Earned (₹)", "cost_used_details": "Batch / Remarks Info",
-        "payment_status": "Mode", "party": "Party Name"
-    })
-    st.dataframe(df[["Date & Time", "Item Variety", "Transaction Type", "Party Name", "Quantity (KG)", "Rate (₹/KG)", "Total Value (₹)", "Mode", "Profit Earned (₹)", "Batch / Remarks Info"]], use_container_width=True, hide_index=True)
-else:
-    st.info("No transactions logged yet.")
+                    if "batches" not in it_
