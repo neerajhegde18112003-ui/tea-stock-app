@@ -336,7 +336,7 @@ with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", ex
                     st.rerun()
     else: st.info("Please add a tea variety first.")
 
-# FIXED UPDATED FEATURE: Account Ledger Matching Engine
+# Account Ledger Matching Engine
 with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment (Clear Dues)**", expanded=False):
     a_c1, a_c2 = st.columns(2)
     with a_c1: 
@@ -402,7 +402,7 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
         st.session_state.inventory_data = current_inventory
         st.rerun()
 
-# --- NEW VISUAL ADDITION: PARTY OUTSTANDING BALANCES VIEW ---
+# --- PARTY OUTSTANDING BALANCES VIEW ---
 st.write("---")
 st.header("👥 Outstanding Credit Directory")
 c_debt, c_cred = st.columns(2)
@@ -477,7 +477,33 @@ if transactions_history:
         else:
             filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
 
+    # FEATURE addition: Clean Table Download Option
     if filtered_txs:
+        # Construct Pandas DataFrame for Download
+        download_data = []
+        for t in filtered_txs:
+            download_data.append({
+                "Date & Time": t.get("date"),
+                "Transaction Type": t.get("type"),
+                "Product/Item": t.get("item_name"),
+                "Party/Details": t.get("party"),
+                "Quantity (KG)": t.get("quantity", 0),
+                "Rate (₹/KG)": t.get("rate (₹)", 0.0),
+                "Total Amount (₹)": t.get("total_amount (₹)", 0.0),
+                "Payment Mode": t.get("payment_status"),
+                "Profit Realized (₹)": t.get("net_profit_realized (₹)", 0.0)
+            })
+        df_download = pd.DataFrame(download_data)
+        csv_buffer = df_download.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Download Filtered Ledger Table (CSV File)",
+            data=csv_buffer,
+            file_name=f"Nagbari_Ledger_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
         tx_options = []
         for t in filtered_txs:
             t_id = t.get("id", "legacy")
@@ -529,34 +555,37 @@ if transactions_history:
                     st.success("Record voided cleanly!")
                     st.rerun()
                     
-    # UI List-style rendering with color-coded HTML badges for mobile viewing
+    # UI List-style rendering with color-coded badges and rule-based amount styling
     st.write("### 📱 Mobile-Scannable Ledger List")
     display_list = filtered_txs if filtered_txs else transactions_history
     
     for tx in display_list[:25]:
         type_str = tx.get("type", "")
         mode = tx.get("payment_status", "CASH")
-        
-        if type_str == "BUSINESS EXPENSE":
-            badge = '<span class="badge-expense">💸 EXPENSE</span>'
-        elif mode == "CASH": 
-            badge = '<span class="badge-cash">💵 CASH</span>'
-        elif mode == "BANK": 
-            badge = '<span class="badge-bank">🏦 BANK</span>'
-        else: 
-            badge = '<span class="badge-credit">⏳ CREDIT</span>'
-        
         amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
         
+        # Determine Color Logic according to requested criteria:
+        # Credit -> Blue
+        # Cash/Bank Out -> Red
+        # Cash/Bank In -> Green
+        if mode == "CREDIT":
+            badge = '<span class="badge-credit">⏳ CREDIT</span>'
+            amt_display = f"<span style='color:#2563eb; font-weight:bold; font-size:1.1rem;'>{amt_formatted}</span>"
+        else:
+            if type_str == "BUSINESS EXPENSE":
+                badge = '<span class="badge-expense">💸 EXPENSE</span>'
+                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
+            elif type_str == "PURCHASE (Stock In)" or type_str == "SUPPLIER PAYMENT (Money Paid)":
+                badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬇️ {mode} OUT</span>'
+                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
+            else: # SALE (Stock Out) or CUSTOMER PAYMENT (Money Received)
+                badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬆️ {mode} IN</span>'
+                amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
+        
         if type_str == "BUSINESS EXPENSE":
-            amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
             row_label = tx.get("cost_used_details", "Operation Cost")
             sub_text = f"{tx.get('date')} • Notes: {tx.get('party')}"
         else:
-            if "SALE" in type_str or "RECEIVED" in type_str:
-                amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
-            else:
-                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
             row_label = tx.get("party")
             qty_info = f" • {tx.get('quantity')} KG" if tx.get('quantity', 0) > 0 else ""
             sub_text = f"{tx.get('date')} • {tx.get('item_name')}{qty_info}"
