@@ -80,7 +80,7 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
     amt = int(qty) * float(rate) if qty > 0 else float(rate)
     txs.insert(0, {
-        "id": str(random.randint(100000, 999999)), # Added explicit ID tracking for targeting deletions
+        "id": str(random.randint(100000, 999999)),
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "item_name": item, "type": t_type,
         "quantity": int(qty), "rate (₹)": float(rate) if qty > 0 else 0.0, "total_amount (₹)": amt,
         "net_profit_realized (₹)": float(margin), "cost_used_details": cost_info, "payment_status": status,
@@ -323,29 +323,47 @@ if current_inventory:
 else:
     st.info("No stock tiles to show. Add a variety above.")
 
-# --- RECENT LEDGER HISTORY LOG + NEW VOID ACTION PANEL ---
+# --- RECENT LEDGER HISTORY LOG + NEW SEARCH ENGINE ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
 if transactions_history:
-    # Render an interactive row control utility directly underneath the data frame
-    st.write("💡 *Spotted a typo? Select any entry below to void it and recalculate the dashboard instantly:*")
     
-    # Formulate short display options for the rollback picker dropdown
-    tx_options = []
-    for t in transactions_history:
-        lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
-        tx_options.append((t.get("id"), lbl))
+    # --- NEW REAL-TIME SEARCH PANEL BLOCK ---
+    st.markdown("### 🔍 Filter and Locate Transactions")
+    fl_c1, fl_c2 = st.columns(2)
+    with fl_c1:
+        search_party = st.text_input("Search by Party Name (Customer/Supplier):", value="")
+    with fl_c2:
+        search_item = st.selectbox("Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
+
+    # Apply calculations instantly behind the scenes
+    filtered_txs = transactions_history
+    if search_party.strip():
+        filtered_txs = [t for t in filtered_txs if search_party.lower() in t.get("party", "").lower()]
+    if search_item != "ALL":
+        filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
+
+    # --- VOID COMPONENT FOR FILTERED RECORDS ---
+    if filtered_txs:
+        st.write(f"💡 *Found {len(filtered_txs)} matching results. Select your entry to void:*")
+        tx_options = []
+        for t in filtered_txs:
+            lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
+            tx_options.append((t.get("id"), lbl))
+            
+        sel_tx_id = st.selectbox("Select Transaction to Void 🗑️", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
         
-    sel_tx_id = st.selectbox("Select Transaction to Void 🗑️", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
-    
-    if st.button("Void & Erase Selected Transaction ❌", use_container_width=True):
-        updated_txs = [x for x in transactions_history if x.get("id") != sel_tx_id]
-        json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
-        st.success("Transaction erased! Dashboard financial metrics recalibrated.")
-        st.rerun()
+        if st.button("Void & Erase Selected Transaction ❌", use_container_width=True):
+            updated_txs = [x for x in transactions_history if x.get("id") != sel_tx_id]
+            json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
+            st.success("Transaction erased! Dashboard metrics recalibrated.")
+            st.rerun()
+    else:
+        st.warning("No transactions match your current search filters.")
         
     st.write("### Data Viewer")
-    df = pd.DataFrame(transactions_history).rename(columns={
+    display_list = filtered_txs if filtered_txs else transactions_history
+    df = pd.DataFrame(display_list).rename(columns={
         "date": "Date & Time", "item_name": "Item Variety", "type": "Transaction Type",
         "quantity": "Quantity (KG)", "rate (₹)": "Rate (₹/KG)", "total_amount (₹)": "Total Value (₹)",
         "net_profit_realized (₹)": "Profit Earned (₹)", "cost_used_details": "Batch / Remarks Info",
