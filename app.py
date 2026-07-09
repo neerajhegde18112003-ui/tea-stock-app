@@ -88,21 +88,15 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- RE-ENGINEERED MASTER METRICS RECALCULATOR ---
 def rebuild_inventory_and_metrics_from_scratch():
-    """Wipes live states and replays the entire history safely to handle direct quantity/rate edits."""
     fresh_inv = load_inventory()
-    for k in fresh_inv:
-        fresh_inv[k]["batches"] = []
-        
+    for k in fresh_inv: fresh_inv[k]["batches"] = []
     txs = load_transactions()
-    # Replay from oldest to newest to reconstruct exact FIFO batch states
     for t in reversed(txs):
         item = t.get("item_name")
         ttype = t.get("type")
         qty = int(t.get("quantity", 0))
         rate = float(t.get("rate (₹)", 0))
-        
         if item in fresh_inv:
             it_data = fresh_inv[item]
             if ttype == "PURCHASE (Stock In)":
@@ -112,10 +106,8 @@ def rebuild_inventory_and_metrics_from_scratch():
             elif ttype == "SALE (Stock Out)":
                 rem, cost_bk, margin = qty, [], 0.0
                 tot_avail = sum(b["qty"] for b in it_data["batches"])
-                # Clamp sale to whatever is mathematically available if a typo caused an overshoot
                 rem = min(rem, tot_avail)
                 t["quantity"] = rem
-                
                 while rem > 0 and it_data["batches"]:
                     old_b = it_data["batches"][0]
                     qty_t = min(old_b["qty"], rem)
@@ -124,20 +116,19 @@ def rebuild_inventory_and_metrics_from_scratch():
                     old_b["qty"] -= qty_t
                     rem -= qty_t
                     if old_b["qty"] == 0: it_data["batches"].pop(0)
-                
                 t["net_profit_realized (₹)"] = margin
                 t["cost_used_details"] = ", ".join(cost_bk)
                 t["total_amount (₹)"] = t["quantity"] * rate
             elif ttype == "INITIAL STOCK":
                 if qty > 0: it_data["batches"].append({"qty": qty, "cost": rate})
-    
     save_inventory(fresh_inv)
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
     st.session_state.inventory_data = fresh_inv
 
-# --- LOGIN SECURITY INITIALIZATION ---
+# --- FIX: ROBUST STATEFUL SECURITY ENGINE ---
 auth_data = load_auth()
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "logged_in" not in st.session_state: 
+    st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     _, center_col, _ = st.columns([1, 1.4, 1])
@@ -146,14 +137,18 @@ if not st.session_state.logged_in:
         st.markdown("<h1 style='margin-bottom:24px; font-size:1.9rem !important;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
         input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
         login_btn = st.button("Login 🔓", use_container_width=True)
-        if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
-            st.session_state.logged_in = True
-            st.rerun()
-        elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
-            st.error("❌ Incorrect Password Entry")
+        
+        # Explicit validation check locked to session memory state
+        if login_btn or (input_pwd != "" and input_pwd == auth_data["password"]):
+            if input_pwd == auth_data["password"]:
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("❌ Incorrect Password Entry")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
+# --- CONTINUOUS SESSION RENDER ---
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
@@ -181,18 +176,18 @@ with st.sidebar:
     st.header("⚙️ Settings")
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
-    with st.expander("🚨 Master System Reset (Clear All Data)", expanded=False):
+    with st.expander("🚨 Master System Reset", expanded=False):
         st.warning("This completely deletes all sales history logs and sets all stock values back to 0.")
-        confirm_text = st.text_input("Type 'RESET' to authorize clearing database:")
-        if st.button("WIPE LEDGER & STOCKS NOW 💥", use_container_width=True):
+        confirm_text = st.text_input("Type 'RESET' to authorize:")
+        if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
                 for k in current_inventory: current_inventory[k]["batches"] = []
                 save_inventory(current_inventory)
                 st.session_state.inventory_data = current_inventory
-                st.success("System completely wiped to 0 values!")
+                st.success("System completely wiped!")
                 st.rerun()
-            else: st.error("Incorrect verification text entry.")
+            else: st.error("Incorrect text entry.")
 
     with st.expander("🔐 Password Configuration"):
         if "otp_sent" not in st.session_state: st.session_state.otp_sent = False
@@ -375,7 +370,6 @@ if transactions_history:
         st.write("🔧 **Selected Active Transaction Editor Context:**")
         sel_tx_id = st.selectbox("Pick an entry to modify or delete:", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
         
-        # Pull up target record fields dynamically for live interactive tuning
         target_tx = next(x for x in transactions_history if x.get("id", "legacy") == sel_tx_id)
         
         with st.container(border=True):
@@ -386,7 +380,6 @@ if transactions_history:
             with ed_col2:
                 new_pmode = st.selectbox("Edit Payment Mode", ["CASH", "BANK", "CREDIT"], index=["CASH", "BANK", "CREDIT"].index(target_tx.get("payment_status", "CASH")))
             with ed_col3:
-                # Direct numeric scaling toggles
                 new_qty = st.number_input("Modify Quantity (KG)", min_value=0, value=int(target_tx.get("quantity", 0)))
             with ed_col4:
                 new_rate = st.number_input("Modify Rate (₹/KG)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
@@ -400,7 +393,6 @@ if transactions_history:
                     target_tx["rate (₹)"] = float(new_rate)
                     target_tx["total_amount (₹)"] = int(new_qty) * float(new_rate) if int(new_qty) > 0 else float(new_rate)
                     
-                    # Commit adjustments to disk and run the batch engine recalculation
                     json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
                     st.success("Changes saved! Live financial metrics updated.")
