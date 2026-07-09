@@ -3,21 +3,47 @@ import json, os, random, smtplib, pandas as pd
 from email.mime.text import MIMEText
 from datetime import datetime
 
-# --- MODERN THEME CONFIGURATION ---
+# --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
+
+# Custom CSS injected to force horizontal flex-grids on small screens and prevent vertical stacking
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
+    
+    /* Force 2-column or multi-column grids to stay side-by-side even on mobile screens */
+    @media (max-width: 768px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            min-width: 160px !important;
+            flex: 1 1 auto !important;
+        }
+        .matrix-grid {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+        }
+        .matrix-grid > div {
+            flex: 1 1 calc(50% - 10px) !important;
+            min-width: 150px !important;
+        }
+    }
+
     [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div > div > div > div {
         border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
-        background-color: white; padding: 20px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
+        background-color: white; padding: 18px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
     }
     h1 { font-size: 2.2rem !important; color: #166534; font-weight: 700; text-align: center; }
     h2 { font-size: 1.4rem !important; color: #1e293b; font-weight: 600; margin: 1rem 0 0.5rem 0 !important;}
-    h3 { font-size: 1.3rem !important; font-weight: 700; margin: 0px !important; }
+    h3 { font-size: 1.25rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
-OWNER_EMAIL = "neerajhegde547@gmail.com" 
+OWNER_EMAIL = "your-email@gmail.com" 
 
 def load_auth():
     return json.load(open(AUTH_FILE, "r")) if os.path.exists(AUTH_FILE) else {"password": "admin"}
@@ -47,8 +73,9 @@ def load_inventory():
                 stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
                 d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
             if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
+            if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100  # Default fallback threshold
         return d
-    return {"Assam CTC Tea": {"sale_price": 250.0, "batches": [{"qty": 1000, "cost": 200.0}]}}
+    return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
     json.dump(inv, open(DATA_FILE, "w"), indent=4)
@@ -104,10 +131,30 @@ b_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history i
 b_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)"] and x.get("payment_status") == "BANK")
 bank_flow = b_in - b_out
 
-# --- SIDEBAR ---
+# --- SIDEBAR & NUCLEAR MASTER WIPEOUT ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    with st.expander("🔐 Password"):
+    
+    with st.expander("🚨 Master System Reset (Clear All Data)", expanded=False):
+        st.warning("This completely deletes all sales history logs and sets all stock values back to 0. Perfect for final clean handover!")
+        confirm_text = st.text_input("Type 'RESET' to authorize clearing database:")
+        if st.button("WIPE LEDGER & STOCKS NOW 💥", use_container_width=True):
+            if confirm_text == "RESET":
+                # Clear structural tracking files completely
+                if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
+                
+                # Zero out current active memory dictionary items
+                for k in current_inventory:
+                    current_inventory[k]["batches"] = []
+                save_inventory(current_inventory)
+                
+                st.session_state.inventory_data = current_inventory
+                st.success("System completely wiped to 0 values!")
+                st.rerun()
+            else:
+                st.error("Incorrect verification text entry.")
+
+    with st.expander("🔐 Password Configuration"):
         if "otp_sent" not in st.session_state: st.session_state.otp_sent = False
         if not st.session_state.otp_sent:
             if st.button("Send OTP 📧", use_container_width=True):
@@ -212,15 +259,16 @@ with st.expander("Add New Variety"):
     v_stk = st.number_input("Opening Stock (KG)", min_value=0, value=0)
     v_cost = st.number_input("Cost (₹/KG)", min_value=0.0, value=0.0)
     v_sale = st.number_input("Sale Rate (₹/KG)", min_value=0.0, value=0.0)
+    v_alert = st.number_input("Low Stock Warning Alert Level (KG)", min_value=0, value=100)
     if st.button("Add ✨", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
-        current_inventory[v_name] = {"sale_price": v_sale, "batches": batches}
+        current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
         save_inventory(current_inventory)
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening", "CASH", "Opening")
         st.session_state.inventory_data = current_inventory
         st.rerun()
 
-# --- STOCK TILES DISPLAY ---
+# --- STOCK TILES DISPLAY MATRIX ---
 st.write("---")
 st.header("📦 Current Stock & Batch Breakdown Matrix")
 g_col1, g_col2 = st.columns(2)
@@ -229,10 +277,17 @@ for name in list(current_inventory.keys()):
     dt = current_inventory[name]
     b_list = dt.get("batches", [])
     tot_stk = sum(b["qty"] for b in b_list)
+    limit = dt.get("low_stock_limit", 100)
+    
     with (g_col1 if idx % 2 == 0 else g_col2):
         idx += 1
         with st.container(border=True):
-            st.markdown(f"### {name}")
+            # Dynamic low-stock warning label display inside the individual product card
+            if tot_stk <= limit:
+                st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"### {name}")
+                
             if not b_list: st.write("*Out of Stock*")
             else:
                 for i, b in enumerate(b_list):
@@ -241,9 +296,17 @@ for name in list(current_inventory.keys()):
             m1, m2 = st.columns(2)
             with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
             with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
-            new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
-            if new_s != dt.get('sale_price', 0.0):
+            
+            # Interactive fields to edit item-specific settings in real time
+            e_col1, e_col2 = st.columns(2)
+            with e_col1:
+                new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
+            with e_col2:
+                new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                
+            if new_s != dt.get('sale_price', 0.0) or new_l != limit:
                 current_inventory[name]["sale_price"] = new_s
+                current_inventory[name]["low_stock_limit"] = new_l
                 save_inventory(current_inventory)
                 st.session_state.inventory_data = current_inventory
                 st.rerun()
