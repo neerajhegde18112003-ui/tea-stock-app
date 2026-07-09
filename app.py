@@ -89,12 +89,13 @@ def load_transactions():
 def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
     amt = int(qty) * float(rate) if qty > 0 else float(rate)
+    clean_party = party.strip() if party.strip() != "" else "N/A"
     txs.insert(0, {
         "id": str(random.randint(100000, 999999)),
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "item_name": item, "type": t_type,
         "quantity": int(qty), "rate (₹)": float(rate) if qty > 0 else 0.0, "total_amount (₹)": amt,
         "net_profit_realized (₹)": float(margin), "cost_used_details": cost_info, "payment_status": status,
-        "party": party if party.strip() != "" else "N/A"
+        "party": clean_party
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
@@ -161,22 +162,41 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
+# --- PARTY-WISE LEDGER BALANCE CALCULATOR ---
+customer_credit_map = {}
+supplier_credit_map = {}
+
+for tx in reversed(transactions_history):
+    pty = tx.get("party", "N/A")
+    if pty == "N/A" or pty == "Opening": continue
+    ttype = tx.get("type", "")
+    tamt = float(tx.get("total_amount (₹)", 0.0))
+    pstatus = tx.get("payment_status", "")
+    
+    # Track Customer Receivables
+    if ttype == "SALE (Stock Out)" and pstatus == "CREDIT":
+        customer_credit_map[pty] = customer_credit_map.get(pty, 0.0) + tamt
+    elif ttype == "CUSTOMER PAYMENT (Money Received)":
+        customer_credit_map[pty] = customer_credit_map.get(pty, 0.0) - tamt
+        
+    # Track Supplier Payables
+    if ttype == "PURCHASE (Stock In)" and pstatus == "CREDIT":
+        supplier_credit_map[pty] = supplier_credit_map.get(pty, 0.0) + tamt
+    elif ttype == "SUPPLIER PAYMENT (Money Paid)":
+        supplier_credit_map[pty] = supplier_credit_map.get(pty, 0.0) - tamt
+
+# Filter out completely cleared balances to keep lists sharp
+active_debtors = {k: v for k, v in customer_credit_map.items() if v > 0.01}
+active_creditors = {k: v for k, v in supplier_credit_map.items() if v > 0.01}
+
 # --- LIVE METRICS INTERPRETER ---
 prof = sum(float(x.get("net_profit_realized (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)")
-
-# Operational Expenses Calculation
 total_expenses = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "BUSINESS EXPENSE")
 net_operating_profit = prof - total_expenses
 
-recv = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)" and x.get("payment_status") == "CREDIT")
-coll = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "CUSTOMER PAYMENT (Money Received)")
-receivables = max(0.0, recv - coll)
+receivables = sum(active_debtors.values())
+payables = sum(active_creditors.values())
 
-payb = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "PURCHASE (Stock In)" and x.get("payment_status") == "CREDIT")
-sett = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "SUPPLIER PAYMENT (Money Paid)")
-payables = max(0.0, payb - sett)
-
-# Account Positions adjusted for Outgoing Business Expenses
 c_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["SALE (Stock Out)", "CUSTOMER PAYMENT (Money Received)"] and x.get("payment_status") == "CASH")
 c_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)", "BUSINESS EXPENSE"] and x.get("payment_status") == "CASH")
 cash_flow = c_in - c_out
@@ -225,7 +245,6 @@ with st.sidebar:
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 
-# SMART RESPONSIVE METRICS GRID (Now has 7 items, wraps cleanly automatically)
 tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
 
 st.markdown(f"""
@@ -287,48 +306,71 @@ with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", ex
             p_info = st.text_input("Party Business Name")
             
         if st.button("Submit Stock Entry ⚡", use_container_width=True):
-            it_data = current_inventory[sel_item]
-            margin, details = 0.0, ""
-            if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
-                st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
+            if p_info.strip() == "":
+                st.error("❌ Party Business Name cannot be empty.")
             else:
-                if tx_type == "PURCHASE (Stock In)":
-                    if "batches" not in it_data: it_data["batches"] = []
-                    it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
-                    details = f"Added @ ₹{tx_rate}/KG"
+                it_data = current_inventory[sel_item]
+                margin, details = 0.0, ""
+                if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
+                    st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
                 else:
-                    rem, cost_bk = int(tx_qty), []
-                    while rem > 0 and it_data["batches"]:
-                        old_b = it_data["batches"][0]
-                        qty_t = min(old_b["qty"], rem)
-                        margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
-                        cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
-                        old_b["qty"] -= qty_t
-                        rem -= qty_t
-                        if old_b["qty"] == 0: it_data["batches"].pop(0)
-                    details = ", ".join(cost_bk)
-                save_inventory(current_inventory)
-                add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
-                st.session_state.inventory_data = current_inventory
-                st.success("Logged successfully!")
-                st.rerun()
+                    if tx_type == "PURCHASE (Stock In)":
+                        if "batches" not in it_data: it_data["batches"] = []
+                        it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
+                        details = f"Added @ ₹{tx_rate}/KG"
+                    else:
+                        rem, cost_bk = int(tx_qty), []
+                        while rem > 0 and it_data["batches"]:
+                            old_b = it_data["batches"][0]
+                            qty_t = min(old_b["qty"], rem)
+                            margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
+                            cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
+                            old_b["qty"] -= qty_t
+                            rem -= qty_t
+                            if old_b["qty"] == 0: it_data["batches"].pop(0)
+                        details = ", ".join(cost_bk)
+                    save_inventory(current_inventory)
+                    add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
+                    st.session_state.inventory_data = current_inventory
+                    st.success("Logged successfully!")
+                    st.rerun()
     else: st.info("Please add a tea variety first.")
 
-with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment**", expanded=False):
+# FIXED UPDATED FEATURE: Account Ledger Matching Engine
+with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment (Clear Dues)**", expanded=False):
     a_c1, a_c2 = st.columns(2)
     with a_c1: 
         c_tx_type = st.radio("Direction Mode", ["CUSTOMER PAYMENT (Money Received)", "SUPPLIER PAYMENT (Money Paid)"])
-        adj_amt = st.number_input("Amount Balance (₹)", min_value=1.0, value=5000.0)
+        adj_amt = st.number_input("Amount Paid/Received (₹)", min_value=1.0, value=5000.0, step=1000.0)
     with a_c2:
         adj_mode = st.selectbox("Account Channel", ["CASH", "BANK"])
-        adj_party = st.text_input("Party Context Name")
-        adj_rem = st.text_input("Remarks Summary")
-    if st.button("Submit Cash Entry 💰", use_container_width=True):
-        add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared", adj_mode, adj_party)
-        st.success("Cash Entry Saved!")
-        st.rerun()
+        
+        # SMART DROP-DOWN SWITCH: Dynamically display accounts that actually have dues matching the selected direction
+        if c_tx_type == "CUSTOMER PAYMENT (Money Received)":
+            party_options = list(active_debtors.keys())
+            if party_options:
+                format_func = lambda x: f"👤 {x} (Owes: ₹{active_debtors[x]:,})"
+                selected_party = st.selectbox("Select Customer to Clear Dues", options=party_options, format_func=format_func)
+            else:
+                selected_party = st.text_input("Type Customer Name (No active credit records found)")
+        else:
+            party_options = list(active_creditors.keys())
+            if party_options:
+                format_func = lambda x: f"🏢 {x} (You Owe: ₹{active_creditors[x]:,})"
+                selected_party = st.selectbox("Select Supplier to Pay", options=party_options, format_func=format_func)
+            else:
+                selected_party = st.text_input("Type Supplier Name (No active balance records found)")
+                
+        adj_rem = st.text_input("Remarks Summary", placeholder="e.g., Partial payment / Final settlement")
+        
+    if st.button("Submit Ledger Entry 💰", use_container_width=True):
+        if not selected_party or selected_party.strip() == "":
+            st.error("❌ Please provide or select a valid Party Name.")
+        else:
+            add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared via Ledger Entry", adj_mode, selected_party)
+            st.success(f"Payment entry parsed! Outstanding dues for {selected_party} automatically scaled down.")
+            st.rerun()
 
-# NEW FEATURE UPGRADE: Operational Expenses Drawer
 with st.expander("💸 **Drawer: Log Business Expenses (Rent, Labor, Freight)**", expanded=False):
     ex_c1, ex_c2 = st.columns(2)
     with ex_c1:
@@ -340,14 +382,8 @@ with st.expander("💸 **Drawer: Log Business Expenses (Rent, Labor, Freight)**"
         
     if st.button("Log Expense Record 💥", use_container_width=True):
         add_transaction(
-            item="Business Operation Cost",
-            t_type="BUSINESS EXPENSE",
-            qty=0,
-            rate=ex_amt,
-            margin=0.0,
-            cost_info=ex_cat,
-            status=ex_mode,
-            party=ex_notes if ex_notes.strip() else "General Operational Cost"
+            item="Business Operation Cost", t_type="BUSINESS EXPENSE", qty=0, rate=ex_amt,
+            margin=0.0, cost_info=ex_cat, status=ex_mode, party=ex_notes if ex_notes.strip() else "General Operational Cost"
         )
         st.success(f"Successfully logged ₹{ex_amt:,} under {ex_cat}!")
         st.rerun()
@@ -365,6 +401,25 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening", "CASH", "Opening")
         st.session_state.inventory_data = current_inventory
         st.rerun()
+
+# --- NEW VISUAL ADDITION: PARTY OUTSTANDING BALANCES VIEW ---
+st.write("---")
+st.header("👥 Outstanding Credit Directory")
+c_debt, c_cred = st.columns(2)
+with c_debt:
+    with st.container(border=True):
+        st.markdown("### 📈 Customer Balance (Receivables)")
+        if active_debtors:
+            for name, amt in active_debtors.items():
+                st.write(f"• **{name}:** <span style='color:#2563eb; font-weight:600;'>₹{amt:,}</span>", unsafe_allow_html=True)
+        else: st.write("*No outstanding customer credit lines active!*")
+with c_cred:
+    with st.container(border=True):
+        st.markdown("### 📉 Supplier Balance (Payables)")
+        if active_creditors:
+            for name, amt in active_creditors.items():
+                st.write(f"• **{name}:** <span style='color:#dc2626; font-weight:600;'>₹{amt:,}</span>", unsafe_allow_html=True)
+        else: st.write("*No supplier credit lines outstanding!*")
 
 # --- STOCK TILES DISPLAY MATRIX ---
 st.write("---")
@@ -478,7 +533,7 @@ if transactions_history:
     st.write("### 📱 Mobile-Scannable Ledger List")
     display_list = filtered_txs if filtered_txs else transactions_history
     
-    for tx in display_list[:25]: # Show recent 25 items for loading speed
+    for tx in display_list[:25]:
         type_str = tx.get("type", "")
         mode = tx.get("payment_status", "CASH")
         
