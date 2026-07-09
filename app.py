@@ -6,15 +6,51 @@ from datetime import datetime
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
 
+# Custom CSS injected to force horizontal flex-grids on small screens and absolute centering on login
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
-    .login-wrapper { display: flex; justify-content: center; align-items: center; padding-top: 8%; }
-    @media (max-width: 768px) {
-        [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
-        [data-testid="stHorizontalBlock"] > div { min-width: 160px !important; flex: 1 1 auto !important; }
-        .matrix-grid { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
-        .matrix-grid > div { flex: 1 1 calc(50% - 10px) !important; min-width: 150px !important; }
+    
+    /* Strict CSS Flexbox configuration to force perfect dead-centering on any mobile/desktop viewport */
+    .login-container {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        min-height: 70vh !important;
+        width: 100% !important;
     }
+    .login-box {
+        width: 100% !important;
+        max-width: 400px !important;
+        padding: 24px !important;
+        background-color: white !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08) !important;
+    }
+    
+    @media (max-width: 768px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            min-width: 160px !important;
+            flex: 1 1 auto !important;
+        }
+        .matrix-grid {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+        }
+        .matrix-grid > div {
+            flex: 1 1 calc(50% - 10px) !important;
+            min-width: 150px !important;
+        }
+    }
+
     [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div > div > div > div {
         border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
         background-color: white; padding: 18px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
@@ -76,24 +112,29 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- DIRECT SMOOTH LOGIN EXECUTION ---
+# --- PERFECT UNIFIED CENTERED LOGIN ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-    st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.3, 1])
-    with col:
-        with st.container(border=True):
-            input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
-            login_btn = st.button("Login 🔓", use_container_width=True)
-            
-            if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
-                st.session_state.logged_in = True
-                st.rerun()
-            elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
-                st.error("❌ Incorrect Admin Password Entry")
+    
+    # Outer div centers everything vertically and horizontally
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    
+    # Inner block functions as the clean card wrapper
+    with st.container():
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
+        login_btn = st.button("Login 🔓", use_container_width=True)
+        
+        if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
+            st.session_state.logged_in = True
+            st.rerun()
+        elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
+            st.error("❌ Incorrect Admin Password Entry")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
     st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -122,8 +163,6 @@ bank_flow = b_in - b_out
 # --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    
-    # Restored Logged-in User Email display status label
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
     with st.expander("🚨 Master System Reset (Clear All Data)", expanded=False):
