@@ -6,51 +6,31 @@ from datetime import datetime
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
 
-# Custom CSS injected to force horizontal flex-grids on small screens and absolute centering on login
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
-    /* Strict CSS Flexbox configuration to force perfect dead-centering on any mobile/desktop viewport */
-    .login-container {
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        align-items: center !important;
-        min-height: 70vh !important;
-        width: 100% !important;
-    }
-    .login-box {
-        width: 100% !important;
-        max-width: 400px !important;
-        padding: 24px !important;
+    /* Absolute overlay positioning to force perfect center on mobile and desktop viewports */
+    .mobile-login-center-card {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 90% !important;
+        max-width: 380px !important;
         background-color: white !important;
+        padding: 24px !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 12px !important;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08) !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+        z-index: 999999 !important;
     }
     
     @media (max-width: 768px) {
-        [data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            overflow-x: auto;
-        }
-        [data-testid="stHorizontalBlock"] > div {
-            min-width: 160px !important;
-            flex: 1 1 auto !important;
-        }
-        .matrix-grid {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 10px !important;
-        }
-        .matrix-grid > div {
-            flex: 1 1 calc(50% - 10px) !important;
-            min-width: 150px !important;
-        }
+        [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
+        [data-testid="stHorizontalBlock"] > div { min-width: 160px !important; flex: 1 1 auto !important; }
+        .matrix-grid { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
+        .matrix-grid > div { flex: 1 1 calc(50% - 10px) !important; min-width: 150px !important; }
     }
-
     [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div > div > div > div {
         border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
         background-color: white; padding: 18px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
@@ -112,28 +92,23 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- PERFECT UNIFIED CENTERED LOGIN ---
+# --- DIRECT INJECTION PERFECT CENTERING INTERFACE ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
+    # Build clean HTML card wrapper using the fixed styling classes
+    st.markdown('<div class="mobile-login-center-card">', unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-bottom:20px;'>🍃 NAGBARI</h1>", unsafe_allow_html=True)
     
-    # Outer div centers everything vertically and horizontally
-    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input", label_visibility="visible")
+    login_btn = st.button("Login 🔓", use_container_width=True)
     
-    # Inner block functions as the clean card wrapper
-    with st.container():
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
-        login_btn = st.button("Login 🔓", use_container_width=True)
-        
-        if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
-            st.session_state.logged_in = True
-            st.rerun()
-        elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
-            st.error("❌ Incorrect Admin Password Entry")
-        st.markdown('</div>', unsafe_allow_html=True)
+    if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
+        st.session_state.logged_in = True
+        st.rerun()
+    elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
+        st.error("❌ Incorrect Entry")
         
     st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
