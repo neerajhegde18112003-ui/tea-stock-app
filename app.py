@@ -42,6 +42,7 @@ st.markdown("""<style>
     .badge-cash { background-color: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
     .badge-bank { background-color: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
     .badge-credit { background-color: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
+    .badge-expense { background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
@@ -162,6 +163,11 @@ transactions_history = load_transactions()
 
 # --- LIVE METRICS INTERPRETER ---
 prof = sum(float(x.get("net_profit_realized (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)")
+
+# Operational Expenses Calculation
+total_expenses = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "BUSINESS EXPENSE")
+net_operating_profit = prof - total_expenses
+
 recv = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)" and x.get("payment_status") == "CREDIT")
 coll = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "CUSTOMER PAYMENT (Money Received)")
 receivables = max(0.0, recv - coll)
@@ -170,12 +176,13 @@ payb = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history i
 sett = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "SUPPLIER PAYMENT (Money Paid)")
 payables = max(0.0, payb - sett)
 
+# Account Positions adjusted for Outgoing Business Expenses
 c_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["SALE (Stock Out)", "CUSTOMER PAYMENT (Money Received)"] and x.get("payment_status") == "CASH")
-c_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)"] and x.get("payment_status") == "CASH")
+c_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)", "BUSINESS EXPENSE"] and x.get("payment_status") == "CASH")
 cash_flow = c_in - c_out
 
 b_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["SALE (Stock Out)", "CUSTOMER PAYMENT (Money Received)"] and x.get("payment_status") == "BANK")
-b_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)"] and x.get("payment_status") == "BANK")
+b_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)", "BUSINESS EXPENSE"] and x.get("payment_status") == "BANK")
 bank_flow = b_in - b_out
 
 # --- SIDEBAR CONFIGURATION ---
@@ -218,7 +225,7 @@ with st.sidebar:
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 
-# SMART RESPONSIVE METRICS GRID (Prevents mobile number compression)
+# SMART RESPONSIVE METRICS GRID (Now has 7 items, wraps cleanly automatically)
 tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
 
 st.markdown(f"""
@@ -233,8 +240,12 @@ st.markdown(f"""
         <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 2px;">{tot_stk:,} KG</div>
     </div>
     <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Profit 💰</div>
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Trading Profit 💰</div>
         <div style="font-size: 1.25rem; font-weight: 700; color: #16a34a; margin-top: 2px;">₹{round(prof, 2):,}</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Net Profit ✨</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #0d9488; margin-top: 2px;">₹{round(net_operating_profit, 2):,}</div>
     </div>
     <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Receivables 📈</div>
@@ -317,6 +328,30 @@ with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment**", expanded=Fa
         st.success("Cash Entry Saved!")
         st.rerun()
 
+# NEW FEATURE UPGRADE: Operational Expenses Drawer
+with st.expander("💸 **Drawer: Log Business Expenses (Rent, Labor, Freight)**", expanded=False):
+    ex_c1, ex_c2 = st.columns(2)
+    with ex_c1:
+        ex_cat = st.selectbox("Expense Category", ["Warehouse Rent", "Labor Wages", "Freight / Transport", "Brokerage Commission", "Office Supplies & Miscellaneous"])
+        ex_amt = st.number_input("Expense Amount (₹)", min_value=1.0, value=1000.0, step=500.0)
+    with ex_c2:
+        ex_mode = st.selectbox("Paid From Channel", ["CASH", "BANK"])
+        ex_notes = st.text_input("Additional Notes (e.g. Truck Number, Month)")
+        
+    if st.button("Log Expense Record 💥", use_container_width=True):
+        add_transaction(
+            item="Business Operation Cost",
+            t_type="BUSINESS EXPENSE",
+            qty=0,
+            rate=ex_amt,
+            margin=0.0,
+            cost_info=ex_cat,
+            status=ex_mode,
+            party=ex_notes if ex_notes.strip() else "General Operational Cost"
+        )
+        st.success(f"Successfully logged ₹{ex_amt:,} under {ex_cat}!")
+        st.rerun()
+
 with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
     v_name = st.text_input("Variety Label Name")
     v_stk = st.number_input("Opening Stock (KG Value)", min_value=0, value=0)
@@ -375,20 +410,26 @@ st.write("---")
 st.header("📜 Recent Transactions Log")
 if transactions_history:
     fl_c1, fl_c2 = st.columns(2)
-    with fl_c1: search_party = st.text_input("🔎 Search by Party Name:", value="")
-    with fl_c2: search_item = st.selectbox("🎯 Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
+    with fl_c1: search_party = st.text_input("🔎 Search by Party/Notes Name:", value="")
+    with fl_c2: search_item = st.selectbox("🎯 Filter by Tea Variety:", ["ALL", "BUSINESS EXPENSE"] + list(current_inventory.keys()))
 
     filtered_txs = transactions_history
     if search_party.strip():
-        filtered_txs = [t for t in filtered_txs if search_party.lower() in t.get("party", "").lower()]
+        filtered_txs = [t for t in filtered_txs if search_party.lower() in t.get("party", "").lower() or search_party.lower() in t.get("cost_used_details", "").lower()]
     if search_item != "ALL":
-        filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
+        if search_item == "BUSINESS EXPENSE":
+            filtered_txs = [t for t in filtered_txs if t.get("type") == "BUSINESS EXPENSE"]
+        else:
+            filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
 
     if filtered_txs:
         tx_options = []
         for t in filtered_txs:
             t_id = t.get("id", "legacy")
-            lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
+            if t.get("type") == "BUSINESS EXPENSE":
+                lbl = f"[{t.get('date')}] 💸 EXPENSE: {t.get('cost_used_details')} - ₹{t.get('total_amount (₹)')} ({t.get('party')})"
+            else:
+                lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
             tx_options.append((t_id, lbl))
             
         with st.expander("🔧 **Tap to Open Live Transaction Editor Panel**", expanded=False):
@@ -397,12 +438,20 @@ if transactions_history:
             
             st.markdown(f"#### 📝 Modifying Transaction ID `#{target_tx.get('id')}`")
             ed_col1, ed_col2 = st.columns(2)
-            with ed_col1:
-                new_party = st.text_input("Edit Party Name", value=target_tx.get("party"))
-                new_pmode = st.selectbox("Edit Payment Mode", ["CASH", "BANK", "CREDIT"], index=["CASH", "BANK", "CREDIT"].index(target_tx.get("payment_status", "CASH")))
-            with ed_col2:
-                new_qty = st.number_input("Modify Quantity (KG)", min_value=0, value=int(target_tx.get("quantity", 0)))
-                new_rate = st.number_input("Modify Rate (₹/KG)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
+            if target_tx.get("type") == "BUSINESS EXPENSE":
+                with ed_col1:
+                    new_party = st.text_input("Edit Expense Notes", value=target_tx.get("party"))
+                    new_pmode = st.selectbox("Edit Account Channel", ["CASH", "BANK"], index=["CASH", "BANK"].index(target_tx.get("payment_status", "CASH")))
+                with ed_col2:
+                    new_rate = st.number_input("Modify Expense Amount (₹)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
+                    new_qty = 0
+            else:
+                with ed_col1:
+                    new_party = st.text_input("Edit Party Name", value=target_tx.get("party"))
+                    new_pmode = st.selectbox("Edit Payment Mode", ["CASH", "BANK", "CREDIT"], index=["CASH", "BANK", "CREDIT"].index(target_tx.get("payment_status", "CASH")))
+                with ed_col2:
+                    new_qty = st.number_input("Modify Quantity (KG)", min_value=0, value=int(target_tx.get("quantity", 0)))
+                    new_rate = st.number_input("Modify Rate (₹/KG)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
                 
             btn_save, btn_void = st.columns(2)
             with btn_save:
@@ -430,26 +479,38 @@ if transactions_history:
     display_list = filtered_txs if filtered_txs else transactions_history
     
     for tx in display_list[:25]: # Show recent 25 items for loading speed
-        mode = tx.get("payment_status", "CASH")
-        if mode == "CASH": badge = '<span class="badge-cash">💵 CASH</span>'
-        elif mode == "BANK": badge = '<span class="badge-bank">🏦 BANK</span>'
-        else: badge = '<span class="badge-credit">⏳ CREDIT</span>'
-        
         type_str = tx.get("type", "")
+        mode = tx.get("payment_status", "CASH")
+        
+        if type_str == "BUSINESS EXPENSE":
+            badge = '<span class="badge-expense">💸 EXPENSE</span>'
+        elif mode == "CASH": 
+            badge = '<span class="badge-cash">💵 CASH</span>'
+        elif mode == "BANK": 
+            badge = '<span class="badge-bank">🏦 BANK</span>'
+        else: 
+            badge = '<span class="badge-credit">⏳ CREDIT</span>'
+        
         amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
         
-        if "SALE" in type_str or "RECEIVED" in type_str:
-            amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
-        else:
+        if type_str == "BUSINESS EXPENSE":
             amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
+            row_label = tx.get("cost_used_details", "Operation Cost")
+            sub_text = f"{tx.get('date')} • Notes: {tx.get('party')}"
+        else:
+            if "SALE" in type_str or "RECEIVED" in type_str:
+                amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
+            else:
+                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
+            row_label = tx.get("party")
+            qty_info = f" • {tx.get('quantity')} KG" if tx.get('quantity', 0) > 0 else ""
+            sub_text = f"{tx.get('date')} • {tx.get('item_name')}{qty_info}"
             
-        qty_info = f" • {tx.get('quantity')} KG" if tx.get('quantity', 0) > 0 else ""
-        
         st.markdown(f"""
         <div style="background-color: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <div style="font-weight: 600; color: #1e293b; font-size:0.95rem;">{tx.get('party')}</div>
-                <div style="font-size: 0.8rem; color: #64748b;">{tx.get('date')} • {tx.get('item_name')}{qty_info}</div>
+                <div style="font-weight: 600; color: #1e293b; font-size:0.95rem;">{row_label}</div>
+                <div style="font-size: 0.8rem; color: #64748b;">{sub_text}</div>
                 <div style="margin-top: 4px;">{badge} <span style="font-size: 0.8rem; color: #475569; margin-left: 6px;">{type_str}</span></div>
             </div>
             <div style="text-align: right;">
