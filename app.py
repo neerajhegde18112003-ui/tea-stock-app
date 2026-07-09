@@ -218,20 +218,46 @@ with st.sidebar:
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 
-# Compact Summary Row (Scrolls horizontally natively on narrow phones)
-with st.container():
-    t_c1, t_c2, t_c3, t_c4, t_c5, t_c6 = st.columns(6)
-    tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
-    with t_c1: st.metric("Stock Balance", f"{tot_stk:,} KG")
-    with t_c2: st.metric("Profit 💰", f"₹{round(prof, 2):,}")
-    with t_c3: st.metric("Receivables 📈", f"₹{round(receivables, 2):,}")
-    with t_c4: st.metric("Payables 📉", f"₹{round(payables, 2):,}")
-    with t_c5: st.metric("Cash Box 💵", f"₹{round(cash_flow, 2):,}")
-    with t_c6: st.metric("Bank Position 🏦", f"₹{round(bank_flow, 2):,}")
+# SMART RESPONSIVE METRICS GRID (Prevents mobile number compression)
+tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
+
+st.markdown(f"""
+<div style="
+    display: grid; 
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+    gap: 12px; 
+    margin-bottom: 15px;
+">
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Stock Balance</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 2px;">{tot_stk:,} KG</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Profit 💰</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #16a34a; margin-top: 2px;">₹{round(prof, 2):,}</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Receivables 📈</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #2563eb; margin-top: 2px;">₹{round(receivables, 2):,}</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Payables 📉</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #dc2626; margin-top: 2px;">₹{round(payables, 2):,}</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Cash Box 💵</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 2px;">₹{round(cash_flow, 2):,}</div>
+    </div>
+    <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Bank Position 🏦</div>
+        <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 2px;">₹{round(bank_flow, 2):,}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 st.write("---")
 
-# UPGRADE: Drawers (Expanders) to clear up vertical height on smartphones
+# Drawers (Expanders) to clear up vertical height on smartphones
 with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", expanded=False):
     if list(current_inventory.keys()):
         x_c1, x_c2, x_c3 = st.columns(3)
@@ -399,7 +425,7 @@ if transactions_history:
                     st.success("Record voided cleanly!")
                     st.rerun()
                     
-    # UPGRADE: UI List-style rendering with color-coded HTML badges for mobile viewing
+    # UI List-style rendering with color-coded HTML badges for mobile viewing
     st.write("### 📱 Mobile-Scannable Ledger List")
     display_list = filtered_txs if filtered_txs else transactions_history
     
@@ -412,7 +438,6 @@ if transactions_history:
         type_str = tx.get("type", "")
         amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
         
-        # Determine green/red highlight text based on transaction direction
         if "SALE" in type_str or "RECEIVED" in type_str:
             amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
         else:
