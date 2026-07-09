@@ -88,7 +88,54 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- NATIVE GRID LOGIN ALIGNMENT ---
+# --- RE-ENGINEERED MASTER METRICS RECALCULATOR ---
+def rebuild_inventory_and_metrics_from_scratch():
+    """Wipes live states and replays the entire history safely to handle direct quantity/rate edits."""
+    fresh_inv = load_inventory()
+    for k in fresh_inv:
+        fresh_inv[k]["batches"] = []
+        
+    txs = load_transactions()
+    # Replay from oldest to newest to reconstruct exact FIFO batch states
+    for t in reversed(txs):
+        item = t.get("item_name")
+        ttype = t.get("type")
+        qty = int(t.get("quantity", 0))
+        rate = float(t.get("rate (₹)", 0))
+        
+        if item in fresh_inv:
+            it_data = fresh_inv[item]
+            if ttype == "PURCHASE (Stock In)":
+                it_data["batches"].append({"qty": qty, "cost": rate})
+                t["net_profit_realized (₹)"] = 0.0
+                t["cost_used_details"] = f"Added @ ₹{rate}/KG"
+            elif ttype == "SALE (Stock Out)":
+                rem, cost_bk, margin = qty, [], 0.0
+                tot_avail = sum(b["qty"] for b in it_data["batches"])
+                # Clamp sale to whatever is mathematically available if a typo caused an overshoot
+                rem = min(rem, tot_avail)
+                t["quantity"] = rem
+                
+                while rem > 0 and it_data["batches"]:
+                    old_b = it_data["batches"][0]
+                    qty_t = min(old_b["qty"], rem)
+                    margin += (rate - float(old_b["cost"])) * qty_t
+                    cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
+                    old_b["qty"] -= qty_t
+                    rem -= qty_t
+                    if old_b["qty"] == 0: it_data["batches"].pop(0)
+                
+                t["net_profit_realized (₹)"] = margin
+                t["cost_used_details"] = ", ".join(cost_bk)
+                t["total_amount (₹)"] = t["quantity"] * rate
+            elif ttype == "INITIAL STOCK":
+                if qty > 0: it_data["batches"].append({"qty": qty, "cost": rate})
+    
+    save_inventory(fresh_inv)
+    json.dump(txs, open(LOG_FILE, "w"), indent=4)
+    st.session_state.inventory_data = fresh_inv
+
+# --- LOGIN SECURITY INITIALIZATION ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
@@ -111,7 +158,7 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
-# --- METRICS CALCULATIONS ---
+# --- LIVE METRICS INTERPRETER ---
 prof = sum(float(x.get("net_profit_realized (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)")
 recv = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)" and x.get("payment_status") == "CREDIT")
 coll = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "CUSTOMER PAYMENT (Money Received)")
@@ -135,19 +182,17 @@ with st.sidebar:
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
     with st.expander("🚨 Master System Reset (Clear All Data)", expanded=False):
-        st.warning("This completely deletes all sales history logs and sets all stock values back to 0. Perfect for final clean handover!")
+        st.warning("This completely deletes all sales history logs and sets all stock values back to 0.")
         confirm_text = st.text_input("Type 'RESET' to authorize clearing database:")
         if st.button("WIPE LEDGER & STOCKS NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
-                for k in current_inventory:
-                    current_inventory[k]["batches"] = []
+                for k in current_inventory: current_inventory[k]["batches"] = []
                 save_inventory(current_inventory)
                 st.session_state.inventory_data = current_inventory
                 st.success("System completely wiped to 0 values!")
                 st.rerun()
-            else:
-                st.error("Incorrect verification text entry.")
+            else: st.error("Incorrect verification text entry.")
 
     with st.expander("🔐 Password Configuration"):
         if "otp_sent" not in st.session_state: st.session_state.otp_sent = False
@@ -232,8 +277,7 @@ with tab1:
                     st.session_state.inventory_data = current_inventory
                     st.success("Logged successfully!")
                     st.rerun()
-    else:
-        st.info("Please add a tea variety first.")
+    else: st.info("Please add a tea variety first.")
 
 with tab2:
     st.subheader("Pure Cash Ledger Adjustments")
@@ -283,8 +327,7 @@ if current_inventory:
             with st.container(border=True):
                 if tot_stk <= limit:
                     st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"### {name}")
+                else: st.markdown(f"### {name}")
                     
                 if not b_list: st.write("*Out of Stock*")
                 else:
@@ -296,10 +339,8 @@ if current_inventory:
                 with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
                 
                 e_col1, e_col2 = st.columns(2)
-                with e_col1:
-                    new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
-                with e_col2:
-                    new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                with e_col1: new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
+                with e_col2: new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
                     
                 if new_s != dt.get('sale_price', 0.0) or new_l != limit:
                     current_inventory[name]["sale_price"] = new_s
@@ -307,61 +348,74 @@ if current_inventory:
                     save_inventory(current_inventory)
                     st.session_state.inventory_data = current_inventory
                     st.rerun()
-                
-                with st.expander("🗑️ Delete Variety"):
-                    if tot_stk > 0:
-                        st.error("Cannot delete variety with active stock. Sell or clear out inventory first.")
-                    else:
-                        st.warning(f"Are you sure you want to remove '{name}' from the master matrix?")
-                        confirm_del = st.checkbox("Confirm explicit removal", key=f"del_chk_{name}")
-                        if st.button("Permanently Delete Tile ❌", key=f"del_btn_{name}", use_container_width=True, disabled=not confirm_del):
-                            del current_inventory[name]
-                            save_inventory(current_inventory)
-                            st.session_state.inventory_data = current_inventory
-                            st.success(f"Successfully deleted {name}!")
-                            st.rerun()
-else:
-    st.info("No stock tiles to show. Add a variety above.")
+else: st.info("No stock tiles to show.")
 
-# --- RECENT LEDGER HISTORY LOG + NEW SEARCH ENGINE ---
+# --- TRANSACTION HISTORY LOG + DYNAMIC IN-LINE EDITING ENGINE ---
 st.write("---")
 st.header("📜 Recent Transactions History Log")
 if transactions_history:
-    
-    # --- NEW REAL-TIME SEARCH PANEL BLOCK ---
-    st.markdown("### 🔍 Filter and Locate Transactions")
+    st.markdown("### 🔍 Filter, Locate & Edit Records")
     fl_c1, fl_c2 = st.columns(2)
-    with fl_c1:
-        search_party = st.text_input("Search by Party Name (Customer/Supplier):", value="")
-    with fl_c2:
-        search_item = st.selectbox("Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
+    with fl_c1: search_party = st.text_input("Search by Party Name (Customer/Supplier):", value="")
+    with fl_c2: search_item = st.selectbox("Filter by Tea Variety:", ["ALL"] + list(current_inventory.keys()))
 
-    # Apply calculations instantly behind the scenes
     filtered_txs = transactions_history
     if search_party.strip():
         filtered_txs = [t for t in filtered_txs if search_party.lower() in t.get("party", "").lower()]
     if search_item != "ALL":
         filtered_txs = [t for t in filtered_txs if t.get("item_name") == search_item]
 
-    # --- VOID COMPONENT FOR FILTERED RECORDS ---
     if filtered_txs:
-        st.write(f"💡 *Found {len(filtered_txs)} matching results. Select your entry to void:*")
         tx_options = []
         for t in filtered_txs:
+            t_id = t.get("id", "legacy")
             lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
-            tx_options.append((t.get("id"), lbl))
+            tx_options.append((t_id, lbl))
             
-        sel_tx_id = st.selectbox("Select Transaction to Void 🗑️", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
+        st.write("🔧 **Selected Active Transaction Editor Context:**")
+        sel_tx_id = st.selectbox("Pick an entry to modify or delete:", options=[x[0] for x in tx_options], format_func=lambda x: next(y[1] for y in tx_options if y[0] == x))
         
-        if st.button("Void & Erase Selected Transaction ❌", use_container_width=True):
-            updated_txs = [x for x in transactions_history if x.get("id") != sel_tx_id]
-            json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
-            st.success("Transaction erased! Dashboard metrics recalibrated.")
-            st.rerun()
+        # Pull up target record fields dynamically for live interactive tuning
+        target_tx = next(x for x in transactions_history if x.get("id", "legacy") == sel_tx_id)
+        
+        with st.container(border=True):
+            st.markdown(f"#### 📝 Editing Mode: Transaction ID `#{target_tx.get('id')}`")
+            ed_col1, ed_col2, ed_col3, ed_col4 = st.columns(4)
+            with ed_col1:
+                new_party = st.text_input("Edit Party Name", value=target_tx.get("party"))
+            with ed_col2:
+                new_pmode = st.selectbox("Edit Payment Mode", ["CASH", "BANK", "CREDIT"], index=["CASH", "BANK", "CREDIT"].index(target_tx.get("payment_status", "CASH")))
+            with ed_col3:
+                # Direct numeric scaling toggles
+                new_qty = st.number_input("Modify Quantity (KG)", min_value=0, value=int(target_tx.get("quantity", 0)))
+            with ed_col4:
+                new_rate = st.number_input("Modify Rate (₹/KG)", min_value=0.0, value=float(target_tx.get("rate (₹)", 0.0)))
+                
+            btn_save, btn_void, _ = st.columns([1, 1, 2])
+            with btn_save:
+                if st.button("Save & Recalculate Ledger ✅", use_container_width=True):
+                    target_tx["party"] = new_party
+                    target_tx["payment_status"] = new_pmode
+                    target_tx["quantity"] = int(new_qty)
+                    target_tx["rate (₹)"] = float(new_rate)
+                    target_tx["total_amount (₹)"] = int(new_qty) * float(new_rate) if int(new_qty) > 0 else float(new_rate)
+                    
+                    # Commit adjustments to disk and run the batch engine recalculation
+                    json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
+                    rebuild_inventory_and_metrics_from_scratch()
+                    st.success("Changes saved! Live financial metrics updated.")
+                    st.rerun()
+            with btn_void:
+                if st.button("Void / Erase This Record Completely ❌", use_container_width=True):
+                    transactions_history = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
+                    json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
+                    rebuild_inventory_and_metrics_from_scratch()
+                    st.success("Record voided cleanly!")
+                    st.rerun()
     else:
         st.warning("No transactions match your current search filters.")
         
-    st.write("### Data Viewer")
+    st.write("### Live Data Viewer")
     display_list = filtered_txs if filtered_txs else transactions_history
     df = pd.DataFrame(display_list).rename(columns={
         "date": "Date & Time", "item_name": "Item Variety", "type": "Transaction Type",
