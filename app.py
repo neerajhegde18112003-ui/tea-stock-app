@@ -9,14 +9,13 @@ st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide"
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
-    /* Clean, reliable flex card layout that shifts dynamically across form factors */
     .clean-login-card {
         background-color: white !important;
         padding: 28px !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 12px !important;
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03) !important;
-        margin-top: 22vh !important; /* Balanced vertical offset across form factors */
+        margin-top: 22vh !important;
         width: 100% !important;
     }
     
@@ -88,27 +87,22 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
 
-# --- CLEAN NATIVE SIDEBAR & GRID LOGIN ALIGNMENT ---
+# --- NATIVE GRID LOGIN ALIGNMENT ---
 auth_data = load_auth()
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    # Use standard Streamlit columns to center the layout perfectly without breaks
     _, center_col, _ = st.columns([1, 1.4, 1])
-    
     with center_col:
         st.markdown('<div class="clean-login-card">', unsafe_allow_html=True)
         st.markdown("<h1 style='margin-bottom:24px; font-size:1.9rem !important;'>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-        
         input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
         login_btn = st.button("Login 🔓", use_container_width=True)
-        
         if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
             st.session_state.logged_in = True
             st.rerun()
         elif (input_pwd != "" and input_pwd != auth_data["password"]) or (login_btn and input_pwd != auth_data["password"]):
             st.error("❌ Incorrect Password Entry")
-            
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -194,48 +188,51 @@ tab1, tab2 = st.tabs(["📝 Log Goods Transaction", "💰 Log Cash Payment"])
 
 with tab1:
     st.subheader("Tea Stock Actions")
-    with st.container():
-        x_c1, x_c2, x_c3, x_c4 = st.columns([1.5, 1, 1, 1.5])
-        with x_c1: sel_item = st.selectbox("Tea Variety", list(current_inventory.keys()))
-        with x_c2: tx_type = st.radio("Action", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
-        with x_c3: tx_qty = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
-        
-        b_list = current_inventory[sel_item].get("batches", [])
-        tot_item_stk = sum(b["qty"] for b in b_list)
-        lat_cost = b_list[-1]["cost"] if b_list else 0.0
-        def_rate = lat_cost if tx_type == "PURCHASE (Stock In)" else current_inventory[sel_item]["sale_price"]
-        
-        with x_c4:
-            tx_rate = st.number_input("Rate (₹/KG)", min_value=0.0, value=float(def_rate), step=5.0)
-            p_mode = st.selectbox("Payment Mode", ["CASH", "BANK", "CREDIT"])
-            p_info = st.text_input("Party Name")
+    if list(current_inventory.keys()):
+        with st.container():
+            x_c1, x_c2, x_c3, x_c4 = st.columns([1.5, 1, 1, 1.5])
+            with x_c1: sel_item = st.selectbox("Tea Variety", list(current_inventory.keys()))
+            with x_c2: tx_type = st.radio("Action", ["PURCHASE (Stock In)", "SALE (Stock Out)"])
+            with x_c3: tx_qty = st.number_input("Quantity (KG)", min_value=1, value=100, step=50)
             
-        if st.button("Submit Stock Entry ⚡", use_container_width=True):
-            it_data = current_inventory[sel_item]
-            margin, details = 0.0, ""
-            if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
-                st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
-            else:
-                if tx_type == "PURCHASE (Stock In)":
-                    if "batches" not in it_data: it_data["batches"] = []
-                    it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
-                    details = f"Added @ ₹{tx_rate}/KG"
+            b_list = current_inventory[sel_item].get("batches", [])
+            tot_item_stk = sum(b["qty"] for b in b_list)
+            lat_cost = b_list[-1]["cost"] if b_list else 0.0
+            def_rate = lat_cost if tx_type == "PURCHASE (Stock In)" else current_inventory[sel_item]["sale_price"]
+            
+            with x_c4:
+                tx_rate = st.number_input("Rate (₹/KG)", min_value=0.0, value=float(def_rate), step=5.0)
+                p_mode = st.selectbox("Payment Mode", ["CASH", "BANK", "CREDIT"])
+                p_info = st.text_input("Party Name")
+                
+            if st.button("Submit Stock Entry ⚡", use_container_width=True):
+                it_data = current_inventory[sel_item]
+                margin, details = 0.0, ""
+                if tx_type == "SALE (Stock Out)" and tx_qty > tot_item_stk:
+                    st.error(f"❌ Low Stock! Only {tot_item_stk} KG left.")
                 else:
-                    rem, cost_bk = int(tx_qty), []
-                    while rem > 0 and it_data["batches"]:
-                        old_b = it_data["batches"][0]
-                        qty_t = min(old_b["qty"], rem)
-                        margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
-                        cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
-                        old_b["qty"] -= qty_t
-                        rem -= qty_t
-                        if old_b["qty"] == 0: it_data["batches"].pop(0)
-                    details = ", ".join(cost_bk)
-                save_inventory(current_inventory)
-                add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
-                st.session_state.inventory_data = current_inventory
-                st.success("Logged successfully!")
-                st.rerun()
+                    if tx_type == "PURCHASE (Stock In)":
+                        if "batches" not in it_data: it_data["batches"] = []
+                        it_data["batches"].append({"qty": int(tx_qty), "cost": float(tx_rate)})
+                        details = f"Added @ ₹{tx_rate}/KG"
+                    else:
+                        rem, cost_bk = int(tx_qty), []
+                        while rem > 0 and it_data["batches"]:
+                            old_b = it_data["batches"][0]
+                            qty_t = min(old_b["qty"], rem)
+                            margin += (float(tx_rate) - float(old_b["cost"])) * qty_t
+                            cost_bk.append(f"{qty_t}KG @ ₹{old_b['cost']}")
+                            old_b["qty"] -= qty_t
+                            rem -= qty_t
+                            if old_b["qty"] == 0: it_data["batches"].pop(0)
+                        details = ", ".join(cost_bk)
+                    save_inventory(current_inventory)
+                    add_transaction(sel_item, tx_type, tx_qty, tx_rate, margin, details, p_mode, p_info)
+                    st.session_state.inventory_data = current_inventory
+                    st.success("Logged successfully!")
+                    st.rerun()
+    else:
+        st.info("Please add a tea variety first.")
 
 with tab2:
     st.subheader("Pure Cash Ledger Adjustments")
@@ -271,43 +268,61 @@ with st.expander("Add New Variety"):
 # --- STOCK TILES DISPLAY MATRIX ---
 st.write("---")
 st.header("📦 Current Stock & Batch Breakdown Matrix")
-g_col1, g_col2 = st.columns(2)
-idx = 0
-for name in list(current_inventory.keys()):
-    dt = current_inventory[name]
-    b_list = dt.get("batches", [])
-    tot_stk = sum(b["qty"] for b in b_list)
-    limit = dt.get("low_stock_limit", 100)
-    
-    with (g_col1 if idx % 2 == 0 else g_col2):
-        idx += 1
-        with st.container(border=True):
-            if tot_stk <= limit:
-                st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"### {name}")
+if current_inventory:
+    g_col1, g_col2 = st.columns(2)
+    idx = 0
+    for name in list(current_inventory.keys()):
+        dt = current_inventory[name]
+        b_list = dt.get("batches", [])
+        tot_stk = sum(b["qty"] for b in b_list)
+        limit = dt.get("low_stock_limit", 100)
+        
+        with (g_col1 if idx % 2 == 0 else g_col2):
+            idx += 1
+            with st.container(border=True):
+                if tot_stk <= limit:
+                    st.markdown(f"### {name} <span style='color:red; font-size:0.85rem; font-weight:bold;'>⚠️ LOW STOCK ALERT</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"### {name}")
+                    
+                if not b_list: st.write("*Out of Stock*")
+                else:
+                    for i, b in enumerate(b_list):
+                        st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
+                st.write("---")
+                m1, m2 = st.columns(2)
+                with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
+                with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
                 
-            if not b_list: st.write("*Out of Stock*")
-            else:
-                for i, b in enumerate(b_list):
-                    st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
-            st.write("---")
-            m1, m2 = st.columns(2)
-            with m1: st.metric("Total Stock", f"{tot_stk:,} KG")
-            with m2: st.metric("Target Sale Rate", f"₹{dt.get('sale_price', 0.0)}")
-            
-            e_col1, e_col2 = st.columns(2)
-            with e_col1:
-                new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
-            with e_col2:
-                new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                e_col1, e_col2 = st.columns(2)
+                with e_col1:
+                    new_s = st.number_input("Edit Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
+                with e_col2:
+                    new_l = st.number_input("Low Stock Trigger (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                    
+                if new_s != dt.get('sale_price', 0.0) or new_l != limit:
+                    current_inventory[name]["sale_price"] = new_s
+                    current_inventory[name]["low_stock_limit"] = new_l
+                    save_inventory(current_inventory)
+                    st.session_state.inventory_data = current_inventory
+                    st.rerun()
                 
-            if new_s != dt.get('sale_price', 0.0) or new_l != limit:
-                current_inventory[name]["sale_price"] = new_s
-                current_inventory[name]["low_stock_limit"] = new_l
-                save_inventory(current_inventory)
-                st.session_state.inventory_data = current_inventory
-                st.rerun()
+                # --- NEW SAFE UTILITY: DELETE LOOPHOLE CLOSER ---
+                with st.expander("🗑️ Delete Variety"):
+                    if tot_stk > 0:
+                        st.error("Cannot delete variety with active stock. Sell or clear out inventory first.")
+                    else:
+                        st.warning(f"Are you sure you want to remove '{name}' from the master matrix?")
+                        confirm_del = st.checkbox("Confirm explicit removal", key=f"del_chk_{name}")
+                        if st.button("Permanently Delete Tile ❌", key=f"del_btn_{name}", use_container_width=True, disabled=not confirm_del):
+                            del current_inventory[name]
+                            save_inventory(current_inventory)
+                            add_transaction(name, "DELETED VARIETY", 0, 0, 0, "Variety Removed from Matrix", "N/A", "N/A")
+                            st.session_state.inventory_data = current_inventory
+                            st.success(f"Successfully deleted {name}!")
+                            st.rerun()
+else:
+    st.info("No stock tiles to show. Add a variety above.")
 
 # --- RECENT LEDGER HISTORY LOG ---
 st.write("---")
