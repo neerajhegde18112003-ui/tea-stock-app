@@ -6,41 +6,15 @@ from datetime import datetime
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
 st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
 
-# Custom CSS injected to force horizontal flex-grids on small screens and prevent vertical stacking
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
-    
-    /* Center the login box flawlessly on both Desktop and Mobile viewports */
-    .login-wrapper {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding-top: 8%;
-    }
-    
-    /* Force 2-column or multi-column grids to stay side-by-side even on mobile screens */
+    .login-wrapper { display: flex; justify-content: center; align-items: center; padding-top: 8%; }
     @media (max-width: 768px) {
-        [data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            overflow-x: auto;
-        }
-        [data-testid="stHorizontalBlock"] > div {
-            min-width: 160px !important;
-            flex: 1 1 auto !important;
-        }
-        .matrix-grid {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 10px !important;
-        }
-        .matrix-grid > div {
-            flex: 1 1 calc(50% - 10px) !important;
-            min-width: 150px !important;
-        }
+        [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
+        [data-testid="stHorizontalBlock"] > div { min-width: 160px !important; flex: 1 1 auto !important; }
+        .matrix-grid { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
+        .matrix-grid > div { flex: 1 1 calc(50% - 10px) !important; min-width: 150px !important; }
     }
-
     [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > div > div > div > div {
         border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
         background-color: white; padding: 18px !important; border: 1px solid #e2e8f0; margin-bottom: 12px;
@@ -115,7 +89,6 @@ if not st.session_state.logged_in:
             input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
             login_btn = st.button("Login 🔓", use_container_width=True)
             
-            # Instantly unlock if they hit enter inside the field OR press the login button
             if (input_pwd == auth_data["password"] and input_pwd != "") or (login_btn and input_pwd == auth_data["password"]):
                 st.session_state.logged_in = True
                 st.rerun()
@@ -146,9 +119,12 @@ b_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history i
 b_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)"] and x.get("payment_status") == "BANK")
 bank_flow = b_in - b_out
 
-# --- SIDEBAR & NUCLEAR MASTER WIPEOUT ---
+# --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.header("⚙️ Settings")
+    
+    # Restored Logged-in User Email display status label
+    st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
     with st.expander("🚨 Master System Reset (Clear All Data)", expanded=False):
         st.warning("This completely deletes all sales history logs and sets all stock values back to 0. Perfect for final clean handover!")
