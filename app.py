@@ -47,7 +47,7 @@ st.markdown("""<style>
 
 DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
 BACKUP_DIR = "backups"
-OWNER_EMAIL = "your-email@gmail.com" 
+OWNER_EMAIL = "neerajhegde547@gmil.com" 
 
 # --- AUTOMATED BACKUP ENGINE ---
 def run_auto_backup():
