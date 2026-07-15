@@ -1,6 +1,5 @@
 import streamlit as st
-import json, os, random, smtplib, glob, pandas as pd
-from email.mime.text import MIMEText
+import json, os, random, glob, pandas as pd
 from datetime import datetime
 
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
@@ -10,19 +9,8 @@ st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide"
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] > .main { background-color: #f8fafc; }
     
-    .clean-login-card {
-        background-color: white !important;
-        padding: 28px !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03) !important;
-        margin-top: 15vh !important;
-        width: 100% !important;
-    }
-    
     /* Mobile optimization rules for tight spacing */
     @media (max-width: 768px) {
-        .clean-login-card { margin-top: 10vh !important; }
         [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
         [data-testid="stHorizontalBlock"] > div { min-width: 140px !important; flex: 1 1 auto !important; padding: 4px !important; }
         .stMetric { padding: 8px !important; }
@@ -45,9 +33,8 @@ st.markdown("""<style>
     .badge-expense { background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
 </style>""", unsafe_allow_html=True)
 
-DATA_FILE, LOG_FILE, AUTH_FILE = "tea_stock_data.json", "transaction_log.json", "auth_config.json"
+DATA_FILE, LOG_FILE = "tea_stock_data.json", "transaction_log.json"
 BACKUP_DIR = "backups"
-OWNER_EMAIL = "neerajhegde547@gmil.com" 
 
 # --- AUTOMATED BACKUP ENGINE ---
 def run_auto_backup():
@@ -75,26 +62,6 @@ def run_auto_backup():
             for old_file in files[:-5]:
                 try: os.remove(old_file)
                 except: pass
-
-def load_auth():
-    return json.load(open(AUTH_FILE, "r")) if os.path.exists(AUTH_FILE) else {"password": "admin"}
-
-def save_auth(pwd):
-    json.dump({"password": pwd}, open(AUTH_FILE, "w"))
-
-def send_otp_email(to_email, otp_code):
-    try:
-        u, p = st.secrets["email"]["gmail_user"], st.secrets["email"]["gmail_password"]
-        msg = MIMEText(f"Your 4-Digit OTP for changing Admin Password is: {otp_code}")
-        msg['Subject'], msg['From'], msg['To'] = "🔒 Security OTP", u, to_email
-        s = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        s.login(u, p)
-        s.sendmail(u, to_email, msg.as_string())
-        s.close()
-        return True
-    except Exception as e:
-        st.error(f"Email failed: {e}")
-        return False
 
 def load_inventory():
     if os.path.exists(DATA_FILE):
@@ -166,37 +133,7 @@ def rebuild_inventory_and_metrics_from_scratch():
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
     st.session_state.inventory_data = fresh_inv
 
-# --- SECURITY ENGINE ---
-auth_data = load_auth()
-if "logged_in" not in st.session_state: 
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    _, center_col, _ = st.columns([1, 1.4, 1])
-    with center_col:
-        st.markdown('<div class="clean-login-card">', unsafe_allow_html=True)
-        st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
-        input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
-        
-        login_btn = st.button("Login 🔓", use_container_width=True)
-        
-        if login_btn or (input_pwd != "" and input_pwd == auth_data["password"]):
-            if input_pwd == auth_data["password"]:
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("❌ Incorrect Password Entry")
-        
-        # --- NEW EMERGENCY EMERGENCY BYPASS RESET BUTTON ---
-        st.write("---")
-        if st.button("🔄 Reset Password to 'admin'", use_container_width=True, help="Click if your current password isn't working."):
-            save_auth("admin")
-            st.success("Password successfully reset back to 'admin'! Please clear the field above and log in.")
-            st.rerun()
-            
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
-
+# --- DATA INITIALIZATION ---
 if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
@@ -246,7 +183,6 @@ bank_flow = b_in - b_out
 # --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
     with st.expander("💾 System Backup Manager", expanded=False):
         st.write("📁 **Storage Location:** `/backups`")
@@ -270,25 +206,6 @@ with st.sidebar:
                 st.success("System completely wiped!")
                 st.rerun()
             else: st.error("Incorrect text entry.")
-
-    with st.expander("🔐 Password Configuration"):
-        if "otp_sent" not in st.session_state: st.session_state.otp_sent = False
-        if not st.session_state.otp_sent:
-            if st.button("Send OTP 📧", use_container_width=True):
-                otp = str(random.randint(1000, 9999))
-                if send_otp_email(OWNER_EMAIL, otp):
-                    st.session_state.generated_otp, st.session_state.otp_sent = otp, True
-                    st.rerun()
-        else:
-            otp_in = st.text_input("4-Digit OTP", max_chars=4)
-            pwd_in = st.text_input("New Password", type="password")
-            if st.button("Save ✅", use_container_width=True) and otp_in == st.session_state.generated_otp and pwd_in.strip():
-                save_auth(pwd_in.strip())
-                st.session_state.otp_sent = False
-                st.success("Saved!")
-    if st.button("Logout 🔒", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
 
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
@@ -444,7 +361,7 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
     if st.button("Add New Product to Catalog", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
-        save_inventory(current_inventory)
+        current_inventory = save_inventory(current_inventory) or current_inventory
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening", "CASH", "Opening")
         st.session_state.inventory_data = current_inventory
         st.rerun()
@@ -497,7 +414,7 @@ if current_inventory:
                 with m2: st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
                 with st.expander("⚙️ Edit Settings", expanded=False):
-                    new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), step=5.0, key=f"ed_{name}")
+                    new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
                     new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
                     if new_s != dt.get('sale_price', 0.0) or new_l != limit:
                         current_inventory[name]["sale_price"] = new_s
@@ -590,15 +507,13 @@ if transactions_history:
                     
                     json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
-                    st.success("Changes saved! Live financial metrics updated.")
+                    st.success("Changes saved! Live ledger metrics updated.")
                     st.rerun()
-            
+                    
             with btn_void:
-                if st.button("Delete / Void Entry 🗑️", use_container_width=True):
-                    updated_txs = [t for t in transactions_history if t.get("id", "legacy") != sel_tx_id]
+                if st.button("Void / Delete Entry Completely 🗑️", use_container_width=True):
+                    updated_txs = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
                     json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
-                    st.warning("Transaction removed! Catalog state recalculating...")
+                    st.warning("Transaction deleted completely. Inventory scaled back.")
                     st.rerun()
-else:
-    st.info("No transaction tiles to show.")
