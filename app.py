@@ -16,13 +16,13 @@ st.markdown("""<style>
         border: 1px solid #e2e8f0 !important;
         border-radius: 12px !important;
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03) !important;
-        margin-top: 22vh !important;
+        margin-top: 15vh !important;
         width: 100% !important;
     }
     
     /* Mobile optimization rules for tight spacing */
     @media (max-width: 768px) {
-        .clean-login-card { margin-top: 15vh !important; }
+        .clean-login-card { margin-top: 10vh !important; }
         [data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: nowrap !important; overflow-x: auto; }
         [data-testid="stHorizontalBlock"] > div { min-width: 140px !important; flex: 1 1 auto !important; padding: 4px !important; }
         .stMetric { padding: 8px !important; }
@@ -57,25 +57,22 @@ def run_auto_backup():
         
     today_str = datetime.now().strftime("%Y-%m-%d")
     
-    # 1. Backup transaction logs
     if os.path.exists(LOG_FILE):
         log_backup_path = os.path.join(BACKUP_DIR, f"tx_log_{today_str}.json")
-        if not os.path.exists(log_backup_path): # Only backup once a day to save space
+        if not os.path.exists(log_backup_path):
             with open(LOG_FILE, 'r') as src, open(log_backup_path, 'w') as dest:
                 dest.write(src.read())
                 
-    # 2. Backup stock inventory matrix
     if os.path.exists(DATA_FILE):
         stock_backup_path = os.path.join(BACKUP_DIR, f"stock_{today_str}.json")
         if not os.path.exists(stock_backup_path):
             with open(DATA_FILE, 'r') as src, open(stock_backup_path, 'w') as dest:
                 dest.write(src.read())
 
-    # 3. Rolling Cleanup: Keep only the 5 most recent days of backups
     for prefix in ["tx_log_", "stock_"]:
         files = sorted(glob.glob(os.path.join(BACKUP_DIR, f"{prefix}*.json")))
         if len(files) > 5:
-            for old_file in files[:-5]: # Remove the oldest files leaving the top 5
+            for old_file in files[:-5]:
                 try: os.remove(old_file)
                 except: pass
 
@@ -113,7 +110,7 @@ def load_inventory():
 
 def save_inventory(inv):
     json.dump(inv, open(DATA_FILE, "w"), indent=4)
-    run_auto_backup() # Trigger background backup on change
+    run_auto_backup()
 
 def load_transactions():
     return json.load(open(LOG_FILE, "r")) if os.path.exists(LOG_FILE) else []
@@ -130,7 +127,7 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
         "party": clean_party
     })
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
-    run_auto_backup() # Trigger background backup on change
+    run_auto_backup()
 
 def rebuild_inventory_and_metrics_from_scratch():
     fresh_inv = load_inventory()
@@ -180,6 +177,7 @@ if not st.session_state.logged_in:
         st.markdown('<div class="clean-login-card">', unsafe_allow_html=True)
         st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
         input_pwd = st.text_input("Admin Password", type="password", key="login_pwd_input")
+        
         login_btn = st.button("Login 🔓", use_container_width=True)
         
         if login_btn or (input_pwd != "" and input_pwd == auth_data["password"]):
@@ -188,6 +186,14 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("❌ Incorrect Password Entry")
+        
+        # --- NEW EMERGENCY EMERGENCY BYPASS RESET BUTTON ---
+        st.write("---")
+        if st.button("🔄 Reset Password to 'admin'", use_container_width=True, help="Click if your current password isn't working."):
+            save_auth("admin")
+            st.success("Password successfully reset back to 'admin'! Please clear the field above and log in.")
+            st.rerun()
+            
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -195,7 +201,6 @@ if "inventory_data" not in st.session_state: st.session_state.inventory_data = l
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 
-# Run an initial check backup on bootup
 run_auto_backup()
 
 # --- PARTY-WISE LEDGER BALANCE CALCULATOR ---
@@ -243,7 +248,6 @@ with st.sidebar:
     st.header("⚙️ Settings")
     st.info(f"👤 **Logged in as:**\n{OWNER_EMAIL}")
     
-    # NEW SIDEBAR VISUAL: Display active background backups
     with st.expander("💾 System Backup Manager", expanded=False):
         st.write("📁 **Storage Location:** `/backups`")
         found_backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
@@ -588,56 +592,13 @@ if transactions_history:
                     rebuild_inventory_and_metrics_from_scratch()
                     st.success("Changes saved! Live financial metrics updated.")
                     st.rerun()
-            with btn_void:
-                if st.button("Void / Erase Record ❌", use_container_width=True):
-                    transactions_history = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
-                    json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
-                    rebuild_inventory_and_metrics_from_scratch()
-                    st.success("Record voided cleanly!")
-                    st.rerun()
-                    
-    st.write("### 📱 Mobile-Scannable Ledger List")
-    display_list = filtered_txs if filtered_txs else transactions_history
-    
-    for tx in display_list[:25]:
-        type_str = tx.get("type", "")
-        mode = tx.get("payment_status", "CASH")
-        amt_formatted = f"₹{tx.get('total_amount (₹)', 0.0):,}"
-        
-        if mode == "CREDIT":
-            badge = '<span class="badge-credit">⏳ CREDIT</span>'
-            amt_display = f"<span style='color:#2563eb; font-weight:bold; font-size:1.1rem;'>{amt_formatted}</span>"
-        else:
-            if type_str == "BUSINESS EXPENSE":
-                badge = '<span class="badge-expense">💸 EXPENSE</span>'
-                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
-            elif type_str == "PURCHASE (Stock In)" or type_str == "SUPPLIER PAYMENT (Money Paid)":
-                badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬇️ {mode} OUT</span>'
-                amt_display = f"<span style='color:#dc2626; font-weight:bold; font-size:1.1rem;'>-{amt_formatted}</span>"
-            else:
-                badge = f'<span class="{"badge-cash" if mode == "CASH" else "badge-bank"}">⬆️ {mode} IN</span>'
-                amt_display = f"<span style='color:#16a34a; font-weight:bold; font-size:1.1rem;'>+{amt_formatted}</span>"
-        
-        if type_str == "BUSINESS EXPENSE":
-            row_label = tx.get("cost_used_details", "Operation Cost")
-            sub_text = f"{tx.get('date')} • Notes: {tx.get('party')}"
-        else:
-            row_label = tx.get("party")
-            qty_info = f" • {tx.get('quantity')} KG" if tx.get('quantity', 0) > 0 else ""
-            sub_text = f"{tx.get('date')} • {tx.get('item_name')}{qty_info}"
             
-        st.markdown(f"""
-        <div style="background-color: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <div style="font-weight: 600; color: #1e293b; font-size:0.95rem;">{row_label}</div>
-                <div style="font-size: 0.8rem; color: #64748b;">{sub_text}</div>
-                <div style="margin-top: 4px;">{badge} <span style="font-size: 0.8rem; color: #475569; margin-left: 6px;">{type_str}</span></div>
-            </div>
-            <div style="text-align: right;">
-                {amt_display}
-                <div style="font-size: 0.75rem; color: #94a3b8;">ID: #{tx.get('id')}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            with btn_void:
+                if st.button("Delete / Void Entry 🗑️", use_container_width=True):
+                    updated_txs = [t for t in transactions_history if t.get("id", "legacy") != sel_tx_id]
+                    json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
+                    rebuild_inventory_and_metrics_from_scratch()
+                    st.warning("Transaction removed! Catalog state recalculating...")
+                    st.rerun()
 else:
-    st.info("No transactions logged yet.")
+    st.info("No transaction tiles to show.")
