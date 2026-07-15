@@ -1,5 +1,6 @@
 import streamlit as st
 import json, os, random, glob, pandas as pd
+import shutil
 from datetime import datetime
 
 # --- MODERN THEME & MOBILE RESPONSIVENESS CONFIG ---
@@ -25,12 +26,6 @@ st.markdown("""<style>
     h1 { font-size: 1.8rem !important; color: #166534; font-weight: 700; text-align: center; margin-bottom: 0.5rem !important; }
     h2 { font-size: 1.2rem !important; color: #1e293b; font-weight: 600; margin: 0.8rem 0 0.4rem 0 !important;}
     h3 { font-size: 1.1rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
-    
-    /* Color Badges for Fast Scanning */
-    .badge-cash { background-color: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
-    .badge-bank { background-color: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
-    .badge-credit { background-color: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
-    .badge-expense { background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; }
 </style>""", unsafe_allow_html=True)
 
 DATA_FILE, LOG_FILE = "tea_stock_data.json", "transaction_log.json"
@@ -65,14 +60,17 @@ def run_auto_backup():
 
 def load_inventory():
     if os.path.exists(DATA_FILE):
-        d = json.load(open(DATA_FILE, "r"))
-        for k in d:
-            if "batches" not in d[k]:
-                stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
-                d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
-            if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
-            if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100
-        return d
+        try:
+            d = json.load(open(DATA_FILE, "r"))
+            for k in d:
+                if "batches" not in d[k]:
+                    stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
+                    d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
+                if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
+                if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100
+            return d
+        except:
+            pass
     return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
@@ -80,7 +78,12 @@ def save_inventory(inv):
     run_auto_backup()
 
 def load_transactions():
-    return json.load(open(LOG_FILE, "r")) if os.path.exists(LOG_FILE) else []
+    if os.path.exists(LOG_FILE):
+        try:
+            return json.load(open(LOG_FILE, "r"))
+        except:
+            return []
+    return []
 
 def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
@@ -133,14 +136,50 @@ def rebuild_inventory_and_metrics_from_scratch():
     json.dump(txs, open(LOG_FILE, "w"), indent=4)
     st.session_state.inventory_data = fresh_inv
 
-# --- DATA INITIALIZATION ---
-if "inventory_data" not in st.session_state: st.session_state.inventory_data = load_inventory()
+# --- INITIAL DATA HYDRATION ---
+if "inventory_data" not in st.session_state: 
+    st.session_state.inventory_data = load_inventory()
+
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
-
 run_auto_backup()
 
-# --- PARTY-WISE LEDGER BALANCE CALCULATOR ---
+# --- SIDEBAR & RECOVERY UTILITIES ---
+with st.sidebar:
+    st.header("⚙️ Settings & Recovery")
+    
+    # Direct Recovery Tool Embedded In Sidebar
+    with st.expander("🚨 Emergency Data Restore Tool", expanded=True):
+        st.write("If transactions or names are missing, use this to recover files from the auto-backup history.")
+        st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
+        st_stock_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "stock_*.json")))
+        
+        if st_log_files:
+            latest_log_name = os.path.basename(st_log_files[-1])
+            st.info(f"Most Recent Backup Found:\n`{latest_log_name}`")
+            if st.button("Restore Most Recent Backup 🔄", use_container_width=True):
+                shutil.copy(st_log_files[-1], LOG_FILE)
+                if st_stock_files:
+                    shutil.copy(st_stock_files[-1], DATA_FILE)
+                st.session_state.inventory_data = load_inventory()
+                st.success("Data pulled safely from history! Refreshing layout...")
+                st.rerun()
+        else:
+            st.error("No archive backups found in the current project directory folder.")
+            
+    with st.expander("🚨 Master System Reset", expanded=False):
+        st.warning("This completely deletes all history and resets stock to 0.")
+        confirm_text = st.text_input("Type 'RESET' to authorize:")
+        if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
+            if confirm_text == "RESET":
+                if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
+                if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
+                st.session_state.clear()
+                st.success("System completely wiped!")
+                st.rerun()
+            else: st.error("Incorrect text entry.")
+
+# --- ACCOUNT BALANCE CALCULATIONS ---
 customer_credit_map = {}
 supplier_credit_map = {}
 
@@ -164,7 +203,7 @@ for tx in reversed(transactions_history):
 active_debtors = {k: v for k, v in customer_credit_map.items() if v > 0.01}
 active_creditors = {k: v for k, v in supplier_credit_map.items() if v > 0.01}
 
-# --- LIVE METRICS INTERPRETER ---
+# --- METRICS CALCULATOR ENGINE ---
 prof = sum(float(x.get("net_profit_realized (₹)", 0)) for x in transactions_history if x.get("type") == "SALE (Stock Out)")
 total_expenses = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") == "BUSINESS EXPENSE")
 net_operating_profit = prof - total_expenses
@@ -180,45 +219,13 @@ b_in = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history i
 b_out = sum(float(x.get("total_amount (₹)", 0)) for x in transactions_history if x.get("type") in ["PURCHASE (Stock In)", "SUPPLIER PAYMENT (Money Paid)", "BUSINESS EXPENSE"] and x.get("payment_status") == "BANK")
 bank_flow = b_in - b_out
 
-# --- SIDEBAR CONFIGURATION ---
-with st.sidebar:
-    st.header("⚙️ Settings")
-    
-    with st.expander("💾 System Backup Manager", expanded=False):
-        st.write("📁 **Storage Location:** `/backups`")
-        found_backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
-        if found_backups:
-            st.success(f"Active Rolling Backups: **{len(found_backups)} Days Saved**")
-            for f_path in reversed(found_backups):
-                st.write(f"• {os.path.basename(f_path).replace('tx_log_', '').replace('.json', '')}")
-        else:
-            st.write("*No archive files found yet.*")
-    
-    with st.expander("🚨 Master System Reset", expanded=False):
-        st.warning("This completely deletes all history and resets stock to 0.")
-        confirm_text = st.text_input("Type 'RESET' to authorize:")
-        if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
-            if confirm_text == "RESET":
-                if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
-                for k in current_inventory: current_inventory[k]["batches"] = []
-                save_inventory(current_inventory)
-                st.session_state.inventory_data = current_inventory
-                st.success("System completely wiped!")
-                st.rerun()
-            else: st.error("Incorrect text entry.")
-
 # --- MAIN DASHBOARD INTERFACE ---
 st.markdown("<h1>🍃 NAGBARI TRADERS</h1>", unsafe_allow_html=True)
 
 tot_stk = sum(sum(b["qty"] for b in item.get("batches", [])) for item in current_inventory.values())
 
 st.markdown(f"""
-<div style="
-    display: grid; 
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
-    gap: 12px; 
-    margin-bottom: 15px;
-">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 15px;">
     <div style="background: white; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="font-size: 0.8rem; color: #64748b; font-weight: 500;">Stock Balance</div>
         <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 2px;">{tot_stk:,} KG</div>
@@ -252,7 +259,7 @@ st.markdown(f"""
 
 st.write("---")
 
-# Drawers (Expanders) to clear up vertical height on smartphones
+# Drawers (Expanders) for Fast Smartphone Operations
 with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", expanded=False):
     if list(current_inventory.keys()):
         x_c1, x_c2, x_c3 = st.columns(3)
@@ -301,7 +308,6 @@ with st.expander("📝 **Drawer: Log New Goods Transaction (Stock In/Out)**", ex
                     st.rerun()
     else: st.info("Please add a tea variety first.")
 
-# Account Ledger Matching Engine
 with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment (Clear Dues)**", expanded=False):
     a_c1, a_c2 = st.columns(2)
     with a_c1: 
@@ -315,24 +321,22 @@ with st.expander("💰 **Drawer: Log Direct Cash/Bank Adjustment (Clear Dues)**"
             if party_options:
                 format_func = lambda x: f"👤 {x} (Owes: ₹{active_debtors[x]:,})"
                 selected_party = st.selectbox("Select Customer to Clear Dues", options=party_options, format_func=format_func)
-            else:
-                selected_party = st.text_input("Type Customer Name (No active credit records found)")
+            else: selected_party = st.text_input("Type Customer Name")
         else:
             party_options = list(active_creditors.keys())
             if party_options:
                 format_func = lambda x: f"🏢 {x} (You Owe: ₹{active_creditors[x]:,})"
                 selected_party = st.selectbox("Select Supplier to Pay", options=party_options, format_func=format_func)
-            else:
-                selected_party = st.text_input("Type Supplier Name (No active balance records found)")
+            else: selected_party = st.text_input("Type Supplier Name")
                 
-        adj_rem = st.text_input("Remarks Summary", placeholder="e.g., Partial payment / Final settlement")
+        adj_rem = st.text_input("Remarks Summary", placeholder="e.g., Partial payment / Settlement")
         
     if st.button("Submit Ledger Entry 💰", use_container_width=True):
         if not selected_party or selected_party.strip() == "":
             st.error("❌ Please provide or select a valid Party Name.")
         else:
             add_transaction("N/A (Pure Cash)", c_tx_type, 0, adj_amt, 0.0, adj_rem if adj_rem.strip() else "Cleared via Ledger Entry", adj_mode, selected_party)
-            st.success(f"Payment entry parsed! Outstanding dues for {selected_party} automatically scaled down.")
+            st.success(f"Payment entry parsed!")
             st.rerun()
 
 with st.expander("💸 **Drawer: Log Business Expenses (Rent, Labor, Freight)**", expanded=False):
@@ -342,14 +346,14 @@ with st.expander("💸 **Drawer: Log Business Expenses (Rent, Labor, Freight)**"
         ex_amt = st.number_input("Expense Amount (₹)", min_value=1.0, value=1000.0, step=500.0)
     with ex_c2:
         ex_mode = st.selectbox("Paid From Channel", ["CASH", "BANK"])
-        ex_notes = st.text_input("Additional Notes (e.g. Truck Number, Month)")
+        ex_notes = st.text_input("Additional Notes")
         
     if st.button("Log Expense Record 💥", use_container_width=True):
         add_transaction(
             item="Business Operation Cost", t_type="BUSINESS EXPENSE", qty=0, rate=ex_amt,
             margin=0.0, cost_info=ex_cat, status=ex_mode, party=ex_notes if ex_notes.strip() else "General Operational Cost"
         )
-        st.success(f"Successfully logged ₹{ex_amt:,} under {ex_cat}!")
+        st.success(f"Successfully logged expense!")
         st.rerun()
 
 with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
@@ -361,12 +365,12 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
     if st.button("Add New Product to Catalog", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
-        current_inventory = save_inventory(current_inventory) or current_inventory
-        add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening", "CASH", "Opening")
+        save_inventory(current_inventory)
+        add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance", "CASH", "Opening Setup")
         st.session_state.inventory_data = current_inventory
         st.rerun()
 
-# --- PARTY OUTSTANDING BALANCES VIEW ---
+# --- PARTY CREDIT ARRAYS ---
 st.write("---")
 st.header("👥 Outstanding Credit Directory")
 c_debt, c_cred = st.columns(2)
@@ -385,7 +389,7 @@ with c_cred:
                 st.write(f"• **{name}:** <span style='color:#dc2626; font-weight:600;'>₹{amt:,}</span>", unsafe_allow_html=True)
         else: st.write("*No supplier credit lines outstanding!*")
 
-# --- STOCK TILES DISPLAY MATRIX ---
+# --- STOCK LIVE MATRIX GRAPHICS ---
 st.write("---")
 st.header("📦 Live Stock Balance Matrix")
 if current_inventory:
@@ -422,14 +426,14 @@ if current_inventory:
                         save_inventory(current_inventory)
                         st.session_state.inventory_data = current_inventory
                         st.rerun()
-else: st.info("No stock tiles to show.")
+else: st.info("No stock items parsed.")
 
-# --- TRANSACTION HISTORY LOG + DYNAMIC IN-LINE EDITING ENGINE ---
+# --- DYNAMIC RECENT TRANSACTION HISTORY PANELS ---
 st.write("---")
 st.header("📜 Recent Transactions Log")
 if transactions_history:
     fl_c1, fl_c2 = st.columns(2)
-    with fl_c1: search_party = st.text_input("🔎 Search by Party/Notes Name:", value="")
+    with fl_c1: search_party = st.text_input("🔎 Search by Party Name:", value="")
     with fl_c2: search_item = st.selectbox("🎯 Filter by Tea Variety:", ["ALL", "BUSINESS EXPENSE"] + list(current_inventory.keys()))
 
     filtered_txs = transactions_history
@@ -445,34 +449,48 @@ if transactions_history:
         download_data = []
         for t in filtered_txs:
             download_data.append({
-                "Date & Time": t.get("date"),
-                "Transaction Type": t.get("type"),
-                "Product/Item": t.get("item_name"),
-                "Party/Details": t.get("party"),
-                "Quantity (KG)": t.get("quantity", 0),
-                "Rate (₹/KG)": t.get("rate (₹)", 0.0),
-                "Total Amount (₹)": t.get("total_amount (₹)", 0.0),
-                "Payment Mode": t.get("payment_status"),
-                "Profit Realized (₹)": t.get("net_profit_realized (₹)", 0.0)
+                "Date & Time": t.get("date"), "Transaction Type": t.get("type"), "Product/Item": t.get("item_name"),
+                "Party/Details": t.get("party"), "Quantity (KG)": t.get("quantity", 0), "Rate (₹/KG)": t.get("rate (₹)", 0.0),
+                "Total Amount (₹)": t.get("total_amount (₹)", 0.0), "Payment Mode": t.get("payment_status"), "Profit Realized (₹)": t.get("net_profit_realized (₹)", 0.0)
             })
         df_download = pd.DataFrame(download_data)
-        csv_buffer = df_download.to_csv(index=False).encode('utf-8')
-        
         st.download_button(
-            label="📥 Download Filtered Ledger Table (CSV File)",
-            data=csv_buffer,
-            file_name=f"Nagbari_Ledger_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
-            use_container_width=True
+            label="📥 Download Filtered Ledger Table (CSV)", data=df_download.to_csv(index=False).encode('utf-8'),
+            file_name=f"Nagbari_Ledger_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True
         )
         
+        # DISPLAY VISUAL LOG LIST
+        for t in filtered_txs:
+            t_type = t.get("type")
+            t_date = t.get("date")
+            t_party = t.get("party")
+            t_amt = t.get("total_amount (₹)", 0.0)
+            t_mode = t.get("payment_status", "CASH")
+            
+            if t_type == "BUSINESS EXPENSE":
+                badge = f"<span style='background-color:#fee2e2; color:#991b1b; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.8rem;'>💸 EXPENSE</span>"
+                desc = f"**{t.get('cost_used_details')}** | Notes: *{t_party}*"
+            elif "PAYMENT" in t_type:
+                badge = f"<span style='background-color:#dbeafe; color:#1d4ed8; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.8rem;'>💰 BAL CLEAR</span>"
+                desc = f"**{t_type}** | Party: **{t_party}** | *{t.get('cost_used_details')}*"
+            else:
+                b_color = "#dcfce7" if "SALE" in t_type else "#fef3c7"
+                f_color = "#15803d" if "SALE" in t_type else "#b45309"
+                badge = f"<span style='background-color:{b_color}; color:{f_color}; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.8rem;'>{t_type}</span>"
+                desc = f"**{t.get('item_name')}** ({t.get('quantity')} KG @ ₹{t.get('rate (₹)')}/KG) | Party: **{t_party}**"
+                
+            st.markdown(f"""
+            <div style="background:white; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div>[{t_date}] {badge} &nbsp;&nbsp; {desc}</div>
+                <div style="font-weight:700; color:#0f172a;">₹{t_amt:,} <span style="font-size:0.75rem; color:#64748b; font-weight:400;">({t_mode})</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # MODIFICATION EDITOR EXPANDER
         tx_options = []
         for t in filtered_txs:
             t_id = t.get("id", "legacy")
-            if t.get("type") == "BUSINESS EXPENSE":
-                lbl = f"[{t.get('date')}] 💸 EXPENSE: {t.get('cost_used_details')} - ₹{t.get('total_amount (₹)')} ({t.get('party')})"
-            else:
-                lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name')} ({t.get('quantity')} KG) - Party: {t.get('party')}"
+            lbl = f"[{t.get('date')}] {t.get('type')} - {t.get('item_name') or t.get('cost_used_details')} - Party: {t.get('party')}"
             tx_options.append((t_id, lbl))
             
         with st.expander("🔧 **Tap to Open Live Transaction Editor Panel**", expanded=False):
@@ -504,16 +522,16 @@ if transactions_history:
                     target_tx["quantity"] = int(new_qty)
                     target_tx["rate (₹)"] = float(new_rate)
                     target_tx["total_amount (₹)"] = int(new_qty) * float(new_rate) if int(new_qty) > 0 else float(new_rate)
-                    
                     json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
-                    st.success("Changes saved! Live ledger metrics updated.")
+                    st.success("Changes saved!")
                     st.rerun()
-                    
             with btn_void:
                 if st.button("Void / Delete Entry Completely 🗑️", use_container_width=True):
                     updated_txs = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
                     json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
-                    st.warning("Transaction deleted completely. Inventory scaled back.")
+                    st.warning("Transaction deleted completely.")
                     st.rerun()
+else:
+    st.info("No transaction histories have been saved or discovered yet. Log a transaction above to generate data logs.")
