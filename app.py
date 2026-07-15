@@ -42,13 +42,13 @@ def run_auto_backup():
     if os.path.exists(LOG_FILE):
         log_backup_path = os.path.join(BACKUP_DIR, f"tx_log_{today_str}.json")
         if not os.path.exists(log_backup_path):
-            with open(LOG_FILE, 'r') as src, open(log_backup_path, 'w') as dest:
+            with open(LOG_FILE, 'r', encoding='utf-8') as src, open(log_backup_path, 'w', encoding='utf-8') as dest:
                 dest.write(src.read())
                 
     if os.path.exists(DATA_FILE):
         stock_backup_path = os.path.join(BACKUP_DIR, f"stock_{today_str}.json")
         if not os.path.exists(stock_backup_path):
-            with open(DATA_FILE, 'r') as src, open(stock_backup_path, 'w') as dest:
+            with open(DATA_FILE, 'r', encoding='utf-8') as src, open(stock_backup_path, 'w', encoding='utf-8') as dest:
                 dest.write(src.read())
 
     for prefix in ["tx_log_", "stock_"]:
@@ -61,7 +61,8 @@ def run_auto_backup():
 def load_inventory():
     if os.path.exists(DATA_FILE):
         try:
-            d = json.load(open(DATA_FILE, "r"))
+            with open(DATA_FILE, "r", encoding='utf-8') as f:
+                d = json.load(f)
             for k in d:
                 if "batches" not in d[k]:
                     stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
@@ -74,20 +75,22 @@ def load_inventory():
     return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
-    json.dump(inv, open(DATA_FILE, "w"), indent=4)
+    with open(DATA_FILE, "w", encoding='utf-8') as f:
+        json.dump(inv, f, indent=4)
     run_auto_backup()
 
 def load_transactions():
     if os.path.exists(LOG_FILE):
         try:
-            return json.load(open(LOG_FILE, "r"))
+            with open(LOG_FILE, "r", encoding='utf-8') as f:
+                return json.load(f)
         except:
             return []
     return []
 
 def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
-    amt = int(qty) * float(rate) if qty > 0 else float(rate)
+    amt = float(qty) * float(rate) if qty > 0 else float(rate)
     clean_party = party.strip() if party.strip() != "" else "N/A"
     txs.insert(0, {
         "id": str(random.randint(100000, 999999)),
@@ -96,7 +99,8 @@ def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
         "net_profit_realized (₹)": float(margin), "cost_used_details": cost_info, "payment_status": status,
         "party": clean_party
     })
-    json.dump(txs, open(LOG_FILE, "w"), indent=4)
+    with open(LOG_FILE, "w", encoding='utf-8') as f:
+        json.dump(txs, f, indent=4)
     run_auto_backup()
 
 def rebuild_inventory_and_metrics_from_scratch():
@@ -132,14 +136,18 @@ def rebuild_inventory_and_metrics_from_scratch():
                 t["total_amount (₹)"] = t["quantity"] * rate
             elif ttype == "INITIAL STOCK":
                 if qty > 0: it_data["batches"].append({"qty": qty, "cost": rate})
+                t["net_profit_realized (₹)"] = 0.0
+                t["cost_used_details"] = "Opening Balance Setup"
     save_inventory(fresh_inv)
-    json.dump(txs, open(LOG_FILE, "w"), indent=4)
+    with open(LOG_FILE, "w", encoding='utf-8') as f:
+        json.dump(txs, f, indent=4)
     st.session_state.inventory_data = fresh_inv
 
 # --- INITIAL DATA HYDRATION ---
 if "inventory_data" not in st.session_state: 
     st.session_state.inventory_data = load_inventory()
 
+# Always match state variables dynamically
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
 run_auto_backup()
@@ -148,7 +156,6 @@ run_auto_backup()
 with st.sidebar:
     st.header("⚙️ Settings & Recovery")
     
-    # Direct Recovery Tool Embedded In Sidebar
     with st.expander("🚨 Emergency Data Restore Tool", expanded=True):
         st.write("If transactions or names are missing, use this to recover files from the auto-backup history.")
         st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
@@ -185,7 +192,7 @@ supplier_credit_map = {}
 
 for tx in reversed(transactions_history):
     pty = tx.get("party", "N/A")
-    if pty == "N/A" or pty == "Opening": continue
+    if pty == "N/A" or pty == "Opening Setup": continue
     ttype = tx.get("type", "")
     tamt = float(tx.get("total_amount (₹)", 0.0))
     pstatus = tx.get("payment_status", "")
@@ -366,7 +373,7 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
         save_inventory(current_inventory)
-        add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance", "CASH", "Opening Setup")
+        add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance Setup", "CASH", "Opening Setup")
         st.session_state.inventory_data = current_inventory
         st.rerun()
 
@@ -414,8 +421,8 @@ if current_inventory:
                         st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
                 st.write("---")
                 m1, m2 = st.columns(2)
-                with m1: st.metric("Available Stock", f"{tot_stk:,} KG")
-                with m2: st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
+                st.metric("Available Stock", f"{tot_stk:,} KG")
+                st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
                 with st.expander("⚙️ Edit Settings", expanded=False):
                     new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
@@ -521,15 +528,18 @@ if transactions_history:
                     target_tx["payment_status"] = new_pmode
                     target_tx["quantity"] = int(new_qty)
                     target_tx["rate (₹)"] = float(new_rate)
-                    target_tx["total_amount (₹)"] = int(new_qty) * float(new_rate) if int(new_qty) > 0 else float(new_rate)
-                    json.dump(transactions_history, open(LOG_FILE, "w"), indent=4)
+                    target_tx["total_amount (₹)"] = float(int(new_qty) * float(new_rate) if int(new_qty) > 0 else float(new_rate))
+                    
+                    with open(LOG_FILE, "w", encoding='utf-8') as f:
+                        json.dump(transactions_history, f, indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
                     st.success("Changes saved!")
                     st.rerun()
             with btn_void:
                 if st.button("Void / Delete Entry Completely 🗑️", use_container_width=True):
                     updated_txs = [x for x in transactions_history if x.get("id", "legacy") != sel_tx_id]
-                    json.dump(updated_txs, open(LOG_FILE, "w"), indent=4)
+                    with open(LOG_FILE, "w", encoding='utf-8') as f:
+                        json.dump(updated_txs, f, indent=4)
                     rebuild_inventory_and_metrics_from_scratch()
                     st.warning("Transaction deleted completely.")
                     st.rerun()
