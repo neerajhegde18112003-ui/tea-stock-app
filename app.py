@@ -31,62 +31,60 @@ st.markdown("""<style>
 DATA_FILE, LOG_FILE = "tea_stock_data.json", "transaction_log.json"
 BACKUP_DIR = "backups"
 
-# --- AUTOMATED BACKUP ENGINE ---
-def run_auto_backup():
-    """Runs a rolling, daily background backup to prevent data loss."""
-    if not os.path.exists(BACKUP_DIR):
-        os.makedirs(BACKUP_DIR)
-        
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    
-    if os.path.exists(LOG_FILE):
-        log_backup_path = os.path.join(BACKUP_DIR, f"tx_log_{today_str}.json")
-        if not os.path.exists(log_backup_path):
-            with open(LOG_FILE, 'r', encoding='utf-8') as src, open(log_backup_path, 'w', encoding='utf-8') as dest:
-                dest.write(src.read())
-                
-    if os.path.exists(DATA_FILE):
-        stock_backup_path = os.path.join(BACKUP_DIR, f"stock_{today_str}.json")
-        if not os.path.exists(stock_backup_path):
-            with open(DATA_FILE, 'r', encoding='utf-8') as src, open(stock_backup_path, 'w', encoding='utf-8') as dest:
-                dest.write(src.read())
+import streamlit as st
+import json, os, random, glob, pandas as pd
+import shutil
+from datetime import datetime
+from streamlit_gsheets import GSheetsConnection # Add this import!
 
-    for prefix in ["tx_log_", "stock_"]:
-        files = sorted(glob.glob(os.path.join(BACKUP_DIR, f"{prefix}*.json")))
-        if len(files) > 5:
-            for old_file in files[:-5]:
-                try: os.remove(old_file)
-                except: pass
+st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
+
+# --- GOOGLE SHEETS CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_inventory():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding='utf-8') as f:
-                d = json.load(f)
-            for k in d:
-                if "batches" not in d[k]:
-                    stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
-                    d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
-                if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
-                if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100
-            return d
-        except:
-            pass
-    return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
+    try:
+        df = conn.read(worksheet="inventory", usecols=[0], nrows=1)
+        if df.empty or pd.isna(df.iloc[0, 0]):
+            return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
+        return json.loads(df.iloc[0, 0])
+    except:
+        return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
-    with open(DATA_FILE, "w", encoding='utf-8') as f:
-        json.dump(inv, f, indent=4)
-    run_auto_backup()
+    df = pd.DataFrame([json.dumps(inv)], columns=["data"])
+    conn.update(worksheet="inventory", data=df)
 
 def load_transactions():
-    if os.path.exists(LOG_FILE):
-        try:
-            with open(LOG_FILE, "r", encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return []
-    return []
+    try:
+        df = conn.read(worksheet="transactions")
+        return df.to_dict(orient="records")
+    except:
+        return []
+
+def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
+    txs = load_transactions()
+    amt = float(qty) * float(rate) if qty > 0 else float(rate)
+    
+    new_tx = {
+        "id": str(random.randint(100000, 999999)),
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "item_name": item,
+        "type": t_type,
+        "quantity": int(qty),
+        "rate (₹)": float(rate) if qty > 0 else 0.0,
+        "total_amount (₹)": amt,
+        "net_profit_realized (₹)": float(margin),
+        "cost_used_details": cost_info,
+        "payment_status": status,
+        "party": party.strip() if party.strip() != "" else "N/A"
+    }
+    
+    txs.insert(0, new_tx)
+    df_new = pd.DataFrame(txs)
+    conn.update(worksheet="transactions", data=df_new)
+
+# --- CONTINUE YOUR APP HERE ---
 
 def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
