@@ -1,4 +1,5 @@
 import streamlit as st
+import json, os, random, glob, pandas as pd
 import shutil
 from datetime import datetime
 
@@ -27,62 +28,65 @@ st.markdown("""<style>
     h3 { font-size: 1.1rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
 </style>""", unsafe_allow_html=True)
 
-DATA_FILE, LOG_FILE = "tea_stock_data.", "transaction_log."
+DATA_FILE, LOG_FILE = "tea_stock_data.json", "transaction_log.json"
 BACKUP_DIR = "backups"
 
-import streamlit as st
-import shutil
-from datetime import datetime
-from streamlit_gsheets import GSheetsConnection # Add this import!
+# --- AUTOMATED BACKUP ENGINE ---
+def run_auto_backup():
+    """Runs a rolling, daily background backup to prevent data loss."""
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    if os.path.exists(LOG_FILE):
+        log_backup_path = os.path.join(BACKUP_DIR, f"tx_log_{today_str}.json")
+        if not os.path.exists(log_backup_path):
+            with open(LOG_FILE, 'r', encoding='utf-8') as src, open(log_backup_path, 'w', encoding='utf-8') as dest:
+                dest.write(src.read())
+                
+    if os.path.exists(DATA_FILE):
+        stock_backup_path = os.path.join(BACKUP_DIR, f"stock_{today_str}.json")
+        if not os.path.exists(stock_backup_path):
+            with open(DATA_FILE, 'r', encoding='utf-8') as src, open(stock_backup_path, 'w', encoding='utf-8') as dest:
+                dest.write(src.read())
 
-st.set_page_config(page_title="Nagbari Traders", page_icon="🍃", layout="wide")
-
-# --- GOOGLE SHEETS CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+    for prefix in ["tx_log_", "stock_"]:
+        files = sorted(glob.glob(os.path.join(BACKUP_DIR, f"{prefix}*.json")))
+        if len(files) > 5:
+            for old_file in files[:-5]:
+                try: os.remove(old_file)
+                except: pass
 
 def load_inventory():
-    try:
-        df = conn.read(worksheet="inventory", usecols=[0], nrows=1)
-        if df.empty or pd.isna(df.iloc[0, 0]):
-            return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
-        return json.loads(df.iloc[0, 0])
-    except:
-        return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding='utf-8') as f:
+                d = json.load(f)
+            for k in d:
+                if "batches" not in d[k]:
+                    stk, prc = d[k].get("stock", 0), d[k].get("purchase_price", 200.0)
+                    d[k]["batches"] = [{"qty": stk, "cost": prc}] if stk > 0 else []
+                if "sale_price" not in d[k]: d[k]["sale_price"] = d[k].get("price", 250.0)
+                if "low_stock_limit" not in d[k]: d[k]["low_stock_limit"] = 100
+            return d
+        except:
+            pass
+    return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
-    df = pd.DataFrame([json.dumps(inv)], columns=["data"])
-    conn.update(worksheet="inventory", data=df)
+    with open(DATA_FILE, "w", encoding='utf-8') as f:
+        json.dump(inv, f, indent=4)
+    run_auto_backup()
 
 def load_transactions():
-    try:
-        df = conn.read(worksheet="transactions")
-        return df.to_dict(orient="records")
-    except:
-        return []
-
-def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
-    txs = load_transactions()
-    amt = float(qty) * float(rate) if qty > 0 else float(rate)
-    
-    new_tx = {
-        "id": str(random.randint(100000, 999999)),
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "item_name": item,
-        "type": t_type,
-        "quantity": int(qty),
-        "rate (₹)": float(rate) if qty > 0 else 0.0,
-        "total_amount (₹)": amt,
-        "net_profit_realized (₹)": float(margin),
-        "cost_used_details": cost_info,
-        "payment_status": status,
-        "party": party.strip() if party.strip() != "" else "N/A"
-    }
-    
-    txs.insert(0, new_tx)
-    df_new = pd.DataFrame(txs)
-    conn.update(worksheet="transactions", data=df_new)
-
-# --- CONTINUE YOUR APP HERE ---
+    if os.path.exists(LOG_FILE):
+        try:
+            with open(LOG_FILE, "r", encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
 
 def add_transaction(item, t_type, qty, rate, margin, cost_info, status, party):
     txs = load_transactions()
@@ -146,7 +150,7 @@ if "inventory_data" not in st.session_state:
 # Always match state variables dynamically
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
-
+run_auto_backup()
 
 # --- SIDEBAR & RECOVERY UTILITIES ---
 with st.sidebar:
@@ -154,12 +158,10 @@ with st.sidebar:
     
     with st.expander("🚨 Emergency Data Restore Tool", expanded=True):
         st.write("If transactions or names are missing, use this to recover files from the auto-backup history.")
-        # DELETE THIS ENTIRE BLOCK (or similar code)
-BACKUP_DIR = "backups" # <--- Delete this
-st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json"))) # <--- Delete this
-# ... any other code that uses these variables
+        st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
+        st_stock_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "stock_*.json")))
         
-if st_log_files:
+        if st_log_files:
             latest_log_name = os.path.basename(st_log_files[-1])
             st.info(f"Most Recent Backup Found:\n`{latest_log_name}`")
             if st.button("Restore Most Recent Backup 🔄", use_container_width=True):
@@ -169,14 +171,13 @@ if st_log_files:
                 st.session_state.inventory_data = load_inventory()
                 st.success("Data pulled safely from history! Refreshing layout...")
                 st.rerun()
-        
+        else:
+            st.error("No archive backups found in the current project directory folder.")
             
-     # The 'with' line should be at the same level as other main-level code
-with st.expander("🚨 Master System Reset", expanded=False):
-    # Everything inside the expander MUST be indented relative to the 'with' line
-    st.write("This is inside the expander.")
-    st.button("Reset System")
-    if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
+    with st.expander("🚨 Master System Reset", expanded=False):
+        st.warning("This completely deletes all history and resets stock to 0.")
+        confirm_text = st.text_input("Type 'RESET' to authorize:")
+        if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
                 if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
@@ -410,38 +411,30 @@ if current_inventory:
         with (g_col1 if idx % 2 == 0 else g_col2):
             idx += 1
             with st.container(border=True):
-                # --- THIS IS THE NEW PART ---
-                col_title, col_del = st.columns([4, 1])
-                with col_title:
-                    if tot_stk <= limit:
-                        st.markdown(f"### {name} <span style='color:#ef4444; font-size:0.8rem; font-weight:bold; border:1px solid #fca5a5; padding:2px 6px; border-radius:4px; background-color:#fef2f2;'>⚠️ LOW</span>", unsafe_allow_html=True)
-                    else: st.markdown(f"### {name}")
-                with col_del:
-                    # Confirmation checkbox + Delete button
-                    confirm = st.checkbox("❌", key=f"conf_{name}", help="Check to enable delete")
-                    if confirm and st.button("🗑️", key=f"del_{name}"):
-                        del current_inventory[name]
-                        save_inventory(current_inventory)
-                        st.session_state.inventory_data = current_inventory
-                        st.rerun()
-                # --- END OF NEW PART ---
+                if tot_stk <= limit:
+                    st.markdown(f"### {name} <span style='color:#ef4444; font-size:0.8rem; font-weight:bold; border:1px solid #fca5a5; padding:2px 6px; border-radius:4px; background-color:#fef2f2;'>⚠️ LOW STOCK</span>", unsafe_allow_html=True)
+                else: st.markdown(f"### {name}")
                     
                 if not b_list: st.write("*Out of Stock*")
                 else:
                     for i, b in enumerate(b_list):
-                        st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG @ **₹{b['cost']}/KG**")
+                        st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
                 st.write("---")
+                m1, m2 = st.columns(2)
                 st.metric("Available Stock", f"{tot_stk:,} KG")
+                st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
                 with st.expander("⚙️ Edit Settings", expanded=False):
-                    new_s = st.number_input("Adjust Price (₹/KG)", value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
-                    new_l = st.number_input("Low Stock Warning (KG)", value=int(limit), key=f"lim_{name}")
+                    new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
+                    new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
                     if new_s != dt.get('sale_price', 0.0) or new_l != limit:
                         current_inventory[name]["sale_price"] = new_s
                         current_inventory[name]["low_stock_limit"] = new_l
                         save_inventory(current_inventory)
+                        st.session_state.inventory_data = current_inventory
                         st.rerun()
 else: st.info("No stock items parsed.")
+
 # --- DYNAMIC RECENT TRANSACTION HISTORY PANELS ---
 st.write("---")
 st.header("📜 Recent Transactions Log")
