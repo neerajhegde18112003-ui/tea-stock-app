@@ -372,7 +372,12 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
     if st.button("Add New Product to Catalog", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
- with st.expander("⚙️ Edit Settings", expanded=False):
+st.metric("Available Stock", f"{tot_stk:,} KG")
+                st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
+                
+                # Ensure the line below starts with exactly 16 spaces
+                with st.expander("⚙️ Edit Settings", expanded=False):
+                    # These lines below must have exactly 20 spaces
                     new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
                     new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
                     
@@ -389,7 +394,7 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
                         current_inventory[name]["low_stock_limit"] = new_l
                         save_inventory(current_inventory)
                         st.session_state.inventory_data = current_inventory
-                        st.rerun()       
+                        st.rerun()
                     # -----------------------    
         save_inventory(current_inventory)
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance Setup", "CASH", "Opening Setup")
