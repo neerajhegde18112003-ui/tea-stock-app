@@ -169,8 +169,7 @@ if st_log_files:
                 st.session_state.inventory_data = load_inventory()
                 st.success("Data pulled safely from history! Refreshing layout...")
                 st.rerun()
-        else:
-            st.error("No archive backups found in the current project directory folder.")
+        
             
     with st.expander("🚨 Master System Reset", expanded=False):
         st.warning("This completely deletes all history and resets stock to 0.")
