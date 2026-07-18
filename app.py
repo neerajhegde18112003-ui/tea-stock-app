@@ -176,7 +176,7 @@ with st.expander("🚨 Master System Reset", expanded=False):
     # Everything inside the expander MUST be indented relative to the 'with' line
     st.write("This is inside the expander.")
     st.button("Reset System")
-        if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
+    if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
                 if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
