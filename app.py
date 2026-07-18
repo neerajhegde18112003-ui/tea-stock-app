@@ -376,14 +376,12 @@ st.metric("Available Stock", f"{tot_stk:,} KG")
                 st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
                 # Ensure the line below starts with exactly 16 spaces
-# Ensure this loop starts at the correct indentation level
-    for name in list(current_inventory.keys()):
+for name in list(current_inventory.keys()):
         dt = current_inventory[name]
         b_list = dt.get("batches", [])
         tot_stk = sum(b["qty"] for b in b_list)
         limit = dt.get("low_stock_limit", 100)
         
-        # Adjust 'g_col1'/'g_col2' alignment as per your existing column setup
         with (g_col1 if idx % 2 == 0 else g_col2):
             idx += 1
             with st.container(border=True):
@@ -399,15 +397,14 @@ st.metric("Available Stock", f"{tot_stk:,} KG")
                         st.write(f"• **Batch #{i+1}:** {b['qty']:,} KG remaining @ **₹{b['cost']}/KG**")
                 
                 st.write("---")
+                # These lines are now aligned to 16 spaces
                 st.metric("Available Stock", f"{tot_stk:,} KG")
                 st.metric("Active Price", f"₹{dt.get('sale_price', 0.0)}")
                 
-                # Expandable settings block
                 with st.expander("⚙️ Edit Settings", expanded=False):
                     new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
                     new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
                     
-                    # Delete functionality
                     if st.button(f"🗑️ Delete {name} Permanently", key=f"del_{name}"):
                         if name in current_inventory:
                             del current_inventory[name]
@@ -416,13 +413,12 @@ st.metric("Available Stock", f"{tot_stk:,} KG")
                             st.warning(f"{name} has been removed from catalog.")
                             st.rerun()
 
-                    # Save changes functionality
                     if new_s != dt.get('sale_price', 0.0) or new_l != limit:
                         current_inventory[name]["sale_price"] = new_s
                         current_inventory[name]["low_stock_limit"] = new_l
                         save_inventory(current_inventory)
                         st.session_state.inventory_data = current_inventory
-                        st.rerun()                
+                        st.rerun()               
                     # -----------------------    
         save_inventory(current_inventory)
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance Setup", "CASH", "Opening Setup")
