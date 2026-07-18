@@ -171,9 +171,11 @@ if st_log_files:
                 st.rerun()
         
             
-     st.expander("🚨 Master System Reset", expanded=False):
-        st.warning("This completely deletes all history and resets stock to 0.")
-        confirm_text = st.text_input("Type 'RESET' to authorize:")
+     # The 'with' line should be at the same level as other main-level code
+with st.expander("🚨 Master System Reset", expanded=False):
+    # Everything inside the expander MUST be indented relative to the 'with' line
+    st.write("This is inside the expander.")
+    st.button("Reset System")
         if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
             if confirm_text == "RESET":
                 if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
