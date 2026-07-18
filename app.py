@@ -50,7 +50,7 @@ def load_inventory():
         return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
-    df = pd.DataFrame([.dumps(inv)], columns=["data"])
+    df = pd.DataFrame([json.dumps(inv)], columns=["data"])
     conn.update(worksheet="inventory", data=df)
 
 def load_transactions():
