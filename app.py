@@ -45,7 +45,7 @@ def load_inventory():
         df = conn.read(worksheet="inventory", usecols=[0], nrows=1)
         if df.empty or pd.isna(df.iloc[0, 0]):
             return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
-        return .loads(df.iloc[0, 0])
+        return json.loads(df.iloc[0, 0])
     except:
         return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
