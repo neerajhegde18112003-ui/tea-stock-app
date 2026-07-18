@@ -159,7 +159,7 @@ BACKUP_DIR = "backups" # <--- Delete this
 st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json"))) # <--- Delete this
 # ... any other code that uses these variables
         
-        if st_log_files:
+if st_log_files:
             latest_log_name = os.path.basename(st_log_files[-1])
             st.info(f"Most Recent Backup Found:\n`{latest_log_name}`")
             if st.button("Restore Most Recent Backup 🔄", use_container_width=True):
