@@ -372,11 +372,10 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
     if st.button("Add New Product to Catalog", use_container_width=True) and v_name.strip() and v_name not in current_inventory:
         batches = [{"qty": int(v_stk), "cost": float(v_cost)}] if v_stk > 0 else []
         current_inventory[v_name] = {"sale_price": v_sale, "low_stock_limit": int(v_alert), "batches": batches}
-    with st.expander("⚙️ Edit Settings", expanded=False):
-        new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
-        new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
-        if new_s != dt.get('sale_price', 0.0) or new_l != limit:
-                    # --- PASTE THIS HERE ---
+ with st.expander("⚙️ Edit Settings", expanded=False):
+                    new_s = st.number_input("Adjust Price (₹/KG)", min_value=0.0, value=float(dt.get('sale_price', 0.0)), key=f"ed_{name}")
+                    new_l = st.number_input("Low Stock Warning Line (KG)", min_value=0, value=int(limit), step=25, key=f"lim_{name}")
+                    
                     if st.button(f"🗑️ Delete {name} Permanently", key=f"del_{name}"):
                         if name in current_inventory:
                             del current_inventory[name]
@@ -384,6 +383,13 @@ with st.expander("✨ **Drawer: Add New Tea Catalog Variety**", expanded=False):
                             st.session_state.inventory_data = current_inventory
                             st.warning(f"{name} has been removed from catalog.")
                             st.rerun()
+
+                    if new_s != dt.get('sale_price', 0.0) or new_l != limit:
+                        current_inventory[name]["sale_price"] = new_s
+                        current_inventory[name]["low_stock_limit"] = new_l
+                        save_inventory(current_inventory)
+                        st.session_state.inventory_data = current_inventory
+                        st.rerun()       
                     # -----------------------    
         save_inventory(current_inventory)
         add_transaction(v_name, "INITIAL STOCK", v_stk, v_cost, 0.0, "Opening Balance Setup", "CASH", "Opening Setup")
