@@ -154,8 +154,10 @@ with st.sidebar:
     
     with st.expander("🚨 Emergency Data Restore Tool", expanded=True):
         st.write("If transactions or names are missing, use this to recover files from the auto-backup history.")
-        st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json")))
-        st_stock_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "stock_*.json")))
+        # DELETE THIS ENTIRE BLOCK (or similar code)
+BACKUP_DIR = "backups" # <--- Delete this
+st_log_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "tx_log_*.json"))) # <--- Delete this
+# ... any other code that uses these variables
         
         if st_log_files:
             latest_log_name = os.path.basename(st_log_files[-1])
