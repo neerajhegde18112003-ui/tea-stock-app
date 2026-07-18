@@ -148,7 +148,7 @@ if "inventory_data" not in st.session_state:
 # Always match state variables dynamically
 current_inventory = st.session_state.inventory_data
 transactions_history = load_transactions()
-run_auto_backup()
+
 
 # --- SIDEBAR & RECOVERY UTILITIES ---
 with st.sidebar:
