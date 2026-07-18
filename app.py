@@ -171,7 +171,7 @@ if st_log_files:
                 st.rerun()
         
             
-    with st.expander("🚨 Master System Reset", expanded=False):
+     st.expander("🚨 Master System Reset", expanded=False):
         st.warning("This completely deletes all history and resets stock to 0.")
         confirm_text = st.text_input("Type 'RESET' to authorize:")
         if st.button("WIPE LEDGER NOW 💥", use_container_width=True):
