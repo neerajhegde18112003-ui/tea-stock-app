@@ -1,5 +1,4 @@
 import streamlit as st
-import json, os, random, glob, pandas as pd
 import shutil
 from datetime import datetime
 
@@ -28,11 +27,10 @@ st.markdown("""<style>
     h3 { font-size: 1.1rem !important; font-weight: 700; margin: 0px !important; color: #0f172a; }
 </style>""", unsafe_allow_html=True)
 
-DATA_FILE, LOG_FILE = "tea_stock_data.json", "transaction_log.json"
+DATA_FILE, LOG_FILE = "tea_stock_data.", "transaction_log."
 BACKUP_DIR = "backups"
 
 import streamlit as st
-import json, os, random, glob, pandas as pd
 import shutil
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection # Add this import!
@@ -47,12 +45,12 @@ def load_inventory():
         df = conn.read(worksheet="inventory", usecols=[0], nrows=1)
         if df.empty or pd.isna(df.iloc[0, 0]):
             return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
-        return json.loads(df.iloc[0, 0])
+        return .loads(df.iloc[0, 0])
     except:
         return {"Assam CTC Tea": {"sale_price": 250.0, "low_stock_limit": 100, "batches": [{"qty": 1000, "cost": 200.0}]}}
 
 def save_inventory(inv):
-    df = pd.DataFrame([json.dumps(inv)], columns=["data"])
+    df = pd.DataFrame([.dumps(inv)], columns=["data"])
     conn.update(worksheet="inventory", data=df)
 
 def load_transactions():
